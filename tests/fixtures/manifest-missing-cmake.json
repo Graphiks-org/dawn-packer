@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "packerVersion": "0.1.0",
+  "dawn": { "tag": "chromium/8077", "revision": "531028367c60ce07251ec0231c1b95bedb4495bc" },
+  "target": { "kotlinTarget": "macosArm64", "triple": "aarch64-apple-macos", "os": "macos", "arch": "arm64" },
+  "linkage": "static",
+  "backends": ["metal", "null"],
+  "compiler": {},
+  "artifacts": [
+    { "path": "include/webgpu/webgpu.h", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "size": 0 }
+  ],
+  "createdAt": "2026-09-29T00:00:00Z"
+}

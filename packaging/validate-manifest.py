@@ -25,6 +25,8 @@ def validate(data):
     require(data.get("linkage") in {"static", "shared"}, "linkage must be static|shared")
     backends = data.get("backends")
     require(isinstance(backends, list) and len(backends) >= 1, "backends must be non-empty")
+    require(isinstance(data.get("compiler"), dict), "compiler must be an object")
+    require(isinstance(data.get("cmake"), dict), "cmake must be an object")
     artifacts = data.get("artifacts")
     require(isinstance(artifacts, list) and len(artifacts) >= 1, "artifacts must be non-empty")
     if isinstance(artifacts, list):
