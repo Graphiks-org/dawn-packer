@@ -22,6 +22,23 @@ if (NOT TARGET webgpu_dawn)
   message(FATAL_ERROR "webgpu_dawn target missing; DAWN_BUILD_MONOLITHIC_LIBRARY is not effective")
 endif()
 
+# The shared variant must only export the public WebGPU C API. Dawn's export
+# macros mark the entry points, but nothing hides the bundled internal symbols
+# (Abseil, Tint, Dawn native) by default, so restrict the dynamic symbol table.
+if (DAWN_PACKER_LINKAGE STREQUAL "SHARED")
+  if (APPLE)
+    # ld64 has no --exclude-libs; an export list is the equivalent and accepts
+    # shell-style wildcards (see `man ld`, -exported_symbols_list). Matching
+    # Mach-O names carry a leading underscore (_wgpuCreateInstance).
+    set(_dawn_packer_exports "${CMAKE_CURRENT_BINARY_DIR}/webgpu_dawn_exports.txt")
+    file(WRITE "${_dawn_packer_exports}" "_wgpu*\n_dawn*\n")
+    target_link_options(webgpu_dawn PRIVATE
+      "-Wl,-exported_symbols_list,${_dawn_packer_exports}")
+  else()
+    target_link_options(webgpu_dawn PRIVATE "-Wl,--exclude-libs,ALL")
+  endif()
+endif()
+
 # NOTE: Dawn must be added WITHOUT EXCLUDE_FROM_ALL: CMake ignores install()
 # rules of an excluded subdirectory, which would install nothing (see
 # https://cmake.org/cmake/help/latest/prop_dir/EXCLUDE_FROM_ALL.html).
