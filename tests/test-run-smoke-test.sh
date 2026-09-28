@@ -27,6 +27,9 @@ archive="$(ls dist/"$target"/dawn-*-"$target"-*.tar.gz 2>/dev/null | head -n1 ||
 link_only_out="$(bash scripts/run-smoke-test.sh "$archive" --link-only)"
 printf '%s\n' "$link_only_out"
 printf '%s\n' "$link_only_out" | grep -q '^link OK$' || fail "link-only did not print 'link OK'"
+if printf '%s\n' "$link_only_out" | grep -q 'dawn-packer smoke test OK'; then
+  fail "link-only executed the binary"
+fi
 
 run_out="$(bash scripts/run-smoke-test.sh "$archive")"
 printf '%s\n' "$run_out"
