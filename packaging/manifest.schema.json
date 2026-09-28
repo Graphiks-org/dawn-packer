@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "dawn-packer manifest",
+  "type": "object",
+  "required": ["schemaVersion", "packerVersion", "dawn", "target", "linkage", "backends", "artifacts", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "packerVersion": { "type": "string" },
+    "dawn": {
+      "type": "object",
+      "required": ["tag", "revision"],
+      "properties": {
+        "tag": { "type": "string" },
+        "revision": { "type": "string", "minLength": 7 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["kotlinTarget", "triple", "os", "arch"],
+      "properties": {
+        "kotlinTarget": { "type": "string" },
+        "triple": { "type": "string" },
+        "os": { "type": "string" },
+        "arch": { "type": "string" }
+      }
+    },
+    "linkage": { "enum": ["static", "shared"] },
+    "backends": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "compiler": { "type": "object" },
+    "cmake": { "type": "object" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "size"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "createdAt": { "type": "string" }
+  }
+}
