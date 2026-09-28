@@ -12,12 +12,8 @@ install_dir="${DAWN_PACKER_INSTALL_DIR:-$root/dist/$target/$linkage/install}"
 # always appended, so archives land in dist/<target>/dawn-...tar.gz.
 out_root="${DAWN_PACKER_DIST_DIR:-$root/dist}/$target"
 
-# The marker is dropped by scripts/build-target.sh. Only enforce it for the
-# default install tree; an explicit DAWN_PACKER_INSTALL_DIR override (used by
-# tests and by callers that stage their own tree) is trusted as-is.
-if [ -z "${DAWN_PACKER_INSTALL_DIR:-}" ]; then
-  [ -f "$install_dir/.dawn-packer-install" ] || { echo "missing install tree: $install_dir" >&2; exit 1; }
-fi
+# The marker is dropped by scripts/build-target.sh when it installs a target.
+[ -f "$install_dir/.dawn-packer-install" ] || { echo "missing install tree: $install_dir" >&2; exit 1; }
 [ -f build/dawn-tag.txt ] || { echo "missing build/dawn-tag.txt (run scripts/sync.sh)" >&2; exit 1; }
 [ -f build/dawn-revision.txt ] || { echo "missing build/dawn-revision.txt (run scripts/sync.sh)" >&2; exit 1; }
 
