@@ -204,5 +204,5 @@ l'application, pas seulement liée au build :
 Voir aussi :
 
 - `README.md` — état des cibles et build local ;
-- `docs/superpowers/specs/2026-09-28-dawn-packer-design.md` — contrat de livraison ;
+- `packaging/manifest.schema.json` — contrat du manifeste livré ;
 - `docs/spikes/` — verdicts par plateforme.
