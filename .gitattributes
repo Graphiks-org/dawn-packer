@@ -1,0 +1,4 @@
+# Shell scripts run through Git Bash on the Windows runner, where CRLF line
+# endings make the interpreter fail on the first line. Pin them to LF whatever
+# platform checks them out.
+*.sh text eol=lf

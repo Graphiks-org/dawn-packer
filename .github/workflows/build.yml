@@ -27,8 +27,8 @@ concurrency:
 
 jobs:
   # Emit the build matrix from targets/matrix.json (dropped targets excluded).
-  # mingwX64 and all watchOS targets are dropped and never reach CI; this job is
-  # the single source of truth for what is built.
+  # All watchOS targets are dropped and never reach CI; this job is the single
+  # source of truth for what is built.
   matrix:
     runs-on: ubuntu-24.04
     outputs:
@@ -98,17 +98,39 @@ jobs:
           # graph avoids multi-GB downloads that are never used.
           submodules: true
 
+      # MSVC has to be on PATH for the configure step and for dumpbin, which
+      # resolves the runtime DLLs after the install. vcvars writes the whole
+      # environment, so it is exported for the later steps instead of being
+      # re-entered.
+      - name: Enter the MSVC environment
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          if "%VS_PATH%"=="" (
+            echo ::error::no Visual Studio installation with the C++ toolset was found
+            exit /b 1
+          )
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+          >>"%GITHUB_ENV%" echo VCToolsRedistDir=%VCToolsRedistDir%
+
       # The smoke test links with the HOST linker, so it is only meaningful for
       # the runner's own target. Derive that target once here and compare it when
       # deciding smoke test vs structural check.
       - name: Derive host target
         id: host
+        # Git Bash, so `uname` is available on every runner the matrix uses.
+        shell: bash
         run: |
           set -euo pipefail
           case "$(uname -s)/$(uname -m)" in
             Darwin/arm64) host_target=macosArm64 ;;
             Linux/x86_64) host_target=linuxX64 ;;
             Linux/aarch64 | Linux/arm64) host_target=linuxArm64 ;;
+            MINGW64_NT-*/x86_64 | MSYS_NT-*/x86_64) host_target=mingwX64 ;;
             *)
               echo "::error::unsupported runner host $(uname -s)/$(uname -m)"
               exit 1
@@ -137,6 +159,7 @@ jobs:
           key: host-protoc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dawn-pin.env') }}-${{ hashFiles('.git/modules/dawn/HEAD') }}
 
       - name: Sync Dawn
+        shell: bash
         run: bash scripts/sync.sh
 
       # Dawn needs X11/GL development packages for the Linux host builds
@@ -178,10 +201,32 @@ jobs:
           echo "using pinned Android NDK $ndk_version at $ndk_dir"
 
       - name: Build
+        shell: bash
         run: bash scripts/build-target.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
 
       - name: Package
+        shell: bash
         run: bash scripts/package.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
+
+      # The manifest must describe the archive exactly. Cheap, and it is the
+      # control that would have caught the dropped Windows DLL.
+      - name: Archive inventory check
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          linkage="${{ matrix.linkage }}"
+          archives=(dist/$target/dawn-*-$target-$linkage.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one $linkage archive for $target, found ${#archives[@]}"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "${archives[0]}" -C "$work"
+          python3 packaging/check-inventory.py "${archives[0]}" "$work/manifest.json" "$work"
 
       # Verify the ELF version script kept Linux shared archives to the public
       # API. Runs on the Linux host, so no extra build is needed.
@@ -212,9 +257,41 @@ jobs:
           count="$(printf '%s\n' "$defined" | grep -Ec '^_?(wgpu|dawn)' || true)"
           echo "shared symbol check OK: $count wgpu/dawn symbols, 0 leaks"
 
+      # The Windows equivalent of the ELF version script check: dllexport is
+      # expected to restrict the table on its own, and this proves it on every
+      # build instead of trusting the measurement once.
+      - name: Shared symbol check (Windows)
+        if: runner.os == 'Windows' && matrix.linkage == 'shared'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          archives=(dist/$target/dawn-*-$target-shared.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one shared archive for $target, found ${#archives[@]}"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "${archives[0]}" -C "$work"
+          dll="$(find "$work/bin" -name 'webgpu_dawn.dll' -print -quit)"
+          [ -n "$dll" ] || { echo "::error::webgpu_dawn.dll missing from ${archives[0]}"; exit 1; }
+          exports="$(dumpbin //exports "$dll" | awk '/^ +[0-9]+ +[0-9A-F]+ +[0-9A-F]+ +/ {print $4}')"
+          [ -n "$exports" ] || { echo "::error::no exports found in $dll"; exit 1; }
+          leaked="$(printf '%s\n' "$exports" | grep -Ev '^_?(wgpu|dawn)' | grep -v '^$' || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::leaked non-wgpu/dawn exports in $dll:"
+            printf '%s\n' "$leaked" | head -n 20
+            exit 1
+          fi
+          count="$(printf '%s\n' "$exports" | grep -Ec '^_?(wgpu|dawn)' || true)"
+          echo "shared symbol check OK: $count wgpu/dawn exports, 0 leaks"
+
       # Host-native archive: link against it and run the smoke binary.
       - name: Smoke test (host target)
         if: steps.host.outputs.host == matrix.target
+        shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -234,6 +311,7 @@ jobs:
       # here we assert the archive's structure and manifest.
       - name: Structural check (cross target)
         if: steps.host.outputs.host != matrix.target
+        shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
