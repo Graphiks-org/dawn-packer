@@ -43,7 +43,13 @@ if [ -n "$toolchain" ]; then
   # Dawn's protobuf.cmake hard-fails when cross-compiling unless a host protoc
   # is supplied. Only cross builds (non-empty toolchain) need it; native targets
   # must not receive the flag.
-  protoc_path="$(bash scripts/build-host-protoc.sh | tail -n1)"
+  if [ "${DAWN_PACKER_DRY_RUN:-0}" = "1" ]; then
+    # Dry run must be side-effect free: report the path a real run would pass
+    # (the deterministic cache path) without invoking the protoc build.
+    protoc_path="$root/build/host-protoc/bin/protoc"
+  else
+    protoc_path="$(bash scripts/build-host-protoc.sh --print-path)"
+  fi
   cmake_args+=("-DPROTOC_EXECUTABLE=$protoc_path")
 fi
 

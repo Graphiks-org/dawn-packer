@@ -3,6 +3,23 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+# --print-path prints ONLY the resolved executable path (cmake output is sent to
+# stderr) so callers can capture it without `tail -n1`. The default invocation
+# keeps printing the path as the last stdout line for backward compatibility.
+print_path_only=0
+case "${1:-}" in
+  --print-path) print_path_only=1 ;;
+  "") ;;
+  *) echo "usage: build-host-protoc.sh [--print-path]" >&2; exit 2 ;;
+esac
+run() {
+  if [ "$print_path_only" = 1 ]; then
+    "$@" >&2
+  else
+    "$@"
+  fi
+}
+
 cache="$root/build/host-protoc"
 protoc="$cache/bin/protoc"
 if [ -x "$protoc" ]; then
@@ -16,7 +33,7 @@ fi
 # own CI (dawn/.github/workflows/ci.yml) instead configures the Dawn tree with
 # DAWN_BUILD_PROTOBUF=ON and builds the `protoc` target, which wires Abseil
 # from dawn/third_party/abseil-cpp. Match that recipe here.
-cmake -S dawn -B "$cache" -G Ninja \
+run cmake -S dawn -B "$cache" -G Ninja \
   -DDAWN_BUILD_PROTOBUF=ON \
   -DDAWN_BUILD_SAMPLES=OFF \
   -DDAWN_BUILD_NODE=OFF \
@@ -39,7 +56,7 @@ cmake -S dawn -B "$cache" -G Ninja \
   -DTINT_BUILD_GLSL_VALIDATOR=OFF \
   -DTINT_BUILD_IR_BINARY=OFF \
   -DCMAKE_BUILD_TYPE=Release
-cmake --build "$cache" --target protoc
+run cmake --build "$cache" --target protoc
 
 # CMake names the executable `protoc` or, because protoc.cmake sets a VERSION,
 # `protoc-<major>.<minor>` (observed: protoc-36.0.0 at the build root). Search

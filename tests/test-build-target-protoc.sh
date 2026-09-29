@@ -5,6 +5,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$root/tests/helpers.sh"
 cd "$root"
 
+# Cold-cache dry run must be side-effect free: it must still print the flag
+# without building protoc or creating the cache.
+rm -rf build/host-protoc
+cold="$(DAWN_PACKER_DRY_RUN=1 bash scripts/build-target.sh tvosArm64 static)"
+printf '%s\n' "$cold" | grep -q -- '-DPROTOC_EXECUTABLE=' || fail "cold dry-run missing -DPROTOC_EXECUTABLE"
+[ ! -e build/host-protoc ] || fail "cold dry-run created the protoc cache"
+
 # Cross target must get the flag; native target must not.
 cross="$(DAWN_PACKER_DRY_RUN=1 bash scripts/build-target.sh tvosArm64 static)"
 printf '%s\n' "$cross" | grep -q -- '-DPROTOC_EXECUTABLE=' || fail "cross target missing -DPROTOC_EXECUTABLE"
@@ -16,9 +23,9 @@ if printf '%s\n' "$native" | grep -q -- '-DPROTOC_EXECUTABLE='; then
 fi
 
 # The host protoc builder is idempotent and prints an executable path.
-path="$(bash scripts/build-host-protoc.sh | tail -n1)"
+path="$(bash scripts/build-host-protoc.sh --print-path)"
 [ -x "$path" ] || fail "host protoc not executable: $path"
-again="$(bash scripts/build-host-protoc.sh | tail -n1)"
+again="$(bash scripts/build-host-protoc.sh --print-path)"
 assert_eq "$again" "$path"
 "$path" --version >/dev/null || fail "protoc does not run"
 pass "build-target-protoc"
