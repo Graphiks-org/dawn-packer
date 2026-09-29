@@ -1,6 +1,8 @@
 name: build
 
-# Manual dispatch and version tags only.
+# Manual dispatch and version tags only. A manual run always builds the full
+# matrix generated from targets/matrix.json:
+#   gh workflow run build.yml --ref master
 on:
   workflow_dispatch:
   push:
