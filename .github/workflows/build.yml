@@ -27,11 +27,14 @@ jobs:
         id: gen
         run: echo "matrix=$(python3 scripts/gen-ci-matrix.py)" >> "$GITHUB_OUTPUT"
 
-  # Fast contract tests. Deliberately excludes the heavy
-  # tests/test-build-target.sh and tests/test-all-targets-buildable.sh: those
-  # duplicate (and are slower than) the per-target `build` job below.
+  # Genuinely fast contract tests. Deliberately excludes every test that runs a
+  # real Dawn build or duplicates the per-target `build` job below:
+  # tests/test-build-target.sh, tests/test-all-targets-buildable.sh,
+  # tests/test-shared-symbols.sh (builds a native shared archive) and
+  # tests/test-build-target-protoc.sh (rebuilds host protoc, ~100s).
   tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,13 +43,6 @@ jobs:
           # initialised here (non-recursively) and Dawn's CMake dependency
           # fetching populates third_party.
           submodules: true
-      # test-shared-symbols.sh performs a native Linux build, so Dawn's X11/GL
-      # development packages must be present.
-      - name: Install Linux deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev \
-            mesa-common-dev libx11-xcb-dev pkg-config ninja-build
       - name: Fast tests
         run: |
           set -euo pipefail
@@ -57,8 +53,6 @@ jobs:
             tests/test-validate-manifest.sh
             tests/test-package.sh
             tests/test-run-smoke-test.sh
-            tests/test-shared-symbols.sh
-            tests/test-build-target-protoc.sh
             tests/test-gen-ci-matrix.sh
           )
           for test_script in "${tests[@]}"; do
@@ -72,6 +66,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -154,10 +149,10 @@ jobs:
           echo "using pinned Android NDK $ndk_version at $ndk_dir"
 
       - name: Build
-        run: bash scripts/build-target.sh ${{ matrix.target }} ${{ matrix.linkage }}
+        run: bash scripts/build-target.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
 
       - name: Package
-        run: bash scripts/package.sh ${{ matrix.target }} ${{ matrix.linkage }}
+        run: bash scripts/package.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
 
       # Host-native archive: link against it and run the smoke binary.
       - name: Smoke test (host target)
