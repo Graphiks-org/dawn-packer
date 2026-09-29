@@ -88,8 +88,9 @@ jobs:
           $lib = ((Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName) -replace "\\", "/"
           $dll = (Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
           @"
+          @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
           import webgpu.*
-          import kotlinx.cinterop.*
 
           fun main() {
               val instance = wgpuCreateInstance(null)
