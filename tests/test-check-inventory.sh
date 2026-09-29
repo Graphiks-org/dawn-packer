@@ -41,7 +41,8 @@ if python3 packaging/check-inventory.py "$work/good.tar.gz" "$stage/manifest.jso
   fail "a manifest entry absent from the archive should be rejected"
 fi
 
-# An archive member the manifest does not describe must fail.
+# Drop the manufactured entry so the manifest and the archive agree again
+# before the next case.
 python3 - "$stage/manifest.json" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -49,6 +50,23 @@ data = json.load(open(path, encoding="utf-8"))
 data["artifacts"] = [a for a in data["artifacts"] if a["path"] != "lib/never-present.tar"]
 json.dump(data, open(path, "w", encoding="utf-8"))
 PY
+
+# An archive member absent from BOTH the manifest and the staged tree must fail
+# on the archive/member direction alone. A stray AppleDouble sidecar has this
+# shape: it lives only in the archive, so the staged-tree diff cannot catch it.
+# The archive is built from a copy of the stage plus one extra file, leaving the
+# staged tree and the manifest consistent with each other.
+member_stage="$work/member-stage"
+mkdir -p "$member_stage"
+cp -R "$stage/bin" "$stage/include" "$stage/manifest.json" "$member_stage/"
+printf 'ghost\n' > "$member_stage/ghost.txt"
+tar -czf "$work/ghost-member.tar.gz" -C "$member_stage" bin include ghost.txt manifest.json
+if python3 packaging/check-inventory.py "$work/ghost-member.tar.gz" "$stage/manifest.json" "$stage" >/dev/null 2>&1; then
+  fail "an archive member absent from the manifest and staged tree should be rejected"
+fi
+
+# An archive member the manifest does not describe must fail. Here the stray
+# file is also in the staged tree, so direction 3 fires alongside direction 2.
 printf 'stray\n' > "$stage/stray.txt"
 tar -czf "$work/extra-member.tar.gz" -C "$stage" bin include stray.txt manifest.json
 if python3 packaging/check-inventory.py "$work/extra-member.tar.gz" "$stage/manifest.json" "$stage" >/dev/null 2>&1; then
