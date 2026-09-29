@@ -154,6 +154,35 @@ jobs:
       - name: Package
         run: bash scripts/package.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
 
+      # Finding 3: verify the ELF version script kept Linux shared archives to
+      # the public API. Runs on the Linux host, so no extra build is needed.
+      - name: Shared symbol check (Linux)
+        if: runner.os == 'Linux' && matrix.linkage == 'shared'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          archives=(dist/$target/dawn-*-$target-shared.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one shared archive for $target, found ${#archives[@]}"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "${archives[0]}" -C "$work"
+          so="$(find "$work/lib" -name '*.so' -print -quit)"
+          [ -n "$so" ] || { echo "::error::shared library missing from ${archives[0]}"; exit 1; }
+          defined="$(nm -D --defined-only "$so" | awk 'NF>=3 {print $3}')"
+          [ -n "$defined" ] || { echo "::error::no dynamic symbols in $so"; exit 1; }
+          leaked="$(printf '%s\n' "$defined" | grep -Ev '^_?(wgpu|dawn)' | grep -v '^$' || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::leaked non-wgpu/dawn symbols in $so:"
+            printf '%s\n' "$leaked" | head -n 40
+            exit 1
+          fi
+          count="$(printf '%s\n' "$defined" | grep -Ec '^_?(wgpu|dawn)' || true)"
+          echo "shared symbol check OK: $count wgpu/dawn symbols, 0 leaks"
+
       # Host-native archive: link against it and run the smoke binary.
       - name: Smoke test (host target)
         if: steps.host.outputs.host == matrix.target

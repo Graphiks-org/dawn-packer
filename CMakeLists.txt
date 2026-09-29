@@ -35,7 +35,15 @@ if (DAWN_PACKER_LINKAGE STREQUAL "SHARED")
     target_link_options(webgpu_dawn PRIVATE
       "-Wl,-exported_symbols_list,${_dawn_packer_exports}")
   else()
-    target_link_options(webgpu_dawn PRIVATE "-Wl,--exclude-libs,ALL")
+    # --exclude-libs only localizes symbols coming from static archives; Dawn's
+    # directly-linked objects (Tint, Dawn native, bundled Abseil) would still
+    # leak. An ELF version script localizes everything not listed, including
+    # those objects, so only the public API stays in the dynamic symbol table.
+    set(_dawn_packer_version_script "${CMAKE_CURRENT_BINARY_DIR}/webgpu_dawn_exports.map")
+    file(WRITE "${_dawn_packer_version_script}"
+      "{\n  global:\n    wgpu*;\n    dawn*;\n  local:\n    *;\n};\n")
+    target_link_options(webgpu_dawn PRIVATE
+      "-Wl,--version-script=${_dawn_packer_version_script}")
   endif()
 endif()
 
