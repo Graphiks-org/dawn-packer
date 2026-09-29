@@ -17,6 +17,12 @@ backends="$(python3 scripts/matrix.py backends "$target")"
 # Ruling P14: Android serves four ABIs but a single CMake toolchain file cannot
 # pick between them, so the ABI lives on the matrix entry and is forwarded here.
 android_abi="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1]).get("androidAbi", ""))' "$entry")"
+# Finding 2: optional per-target extra configure flags (e.g. macosArm64's
+# -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0). These do not touch the toolchain field,
+# so native targets still receive no host protoc.
+mapfile -t extra_cmake_args < <(python3 -c 'import json,sys
+for arg in json.loads(sys.argv[1]).get("extraCmakeArgs", []):
+    print(arg)' "$entry")
 
 backend_flags=()
 for backend in $backends; do
@@ -41,6 +47,9 @@ cmake_args=(
   -DDAWN_EMIT_COVERAGE=OFF
   -DCMAKE_INSTALL_PREFIX="$install_dir"
 )
+if [ "${#extra_cmake_args[@]}" -gt 0 ]; then
+  cmake_args+=("${extra_cmake_args[@]}")
+fi
 if [ -n "$android_abi" ]; then
   cmake_args+=("-DCMAKE_ANDROID_ARCH_ABI=$android_abi")
 fi

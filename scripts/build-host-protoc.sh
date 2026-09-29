@@ -33,8 +33,16 @@ fi
 # own CI (dawn/.github/workflows/ci.yml) instead configures the Dawn tree with
 # DAWN_BUILD_PROTOBUF=ON and builds the `protoc` target, which wires Abseil
 # from dawn/third_party/abseil-cpp. Match that recipe here.
+#
+# DAWN_FETCH_DEPENDENCIES=ON makes this script self-sufficient: submodules are
+# initialized non-recursively (Ruling P8), so on a fresh checkout
+# dawn/third_party/abseil-cpp and protobuf are empty gitlinks and
+# third_party/CMakeLists.txt would `add_subdirectory` an empty Abseil and die.
+# The fetch runs fetch_dawn_dependencies.py, which populates them from the
+# pinned DEPS revisions (same mechanism as the target configure).
 run cmake -S dawn -B "$cache" -G Ninja \
   -DDAWN_BUILD_PROTOBUF=ON \
+  -DDAWN_FETCH_DEPENDENCIES=ON \
   -DDAWN_BUILD_SAMPLES=OFF \
   -DDAWN_BUILD_NODE=OFF \
   -DDAWN_ENABLE_VULKAN=OFF \
