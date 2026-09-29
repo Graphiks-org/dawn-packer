@@ -60,6 +60,8 @@ def errors(data):
         if linkages is not None:
             if not isinstance(linkages, list) or not linkages:
                 problems.append(f"{where}: linkages must be a non-empty list")
+            elif not all(isinstance(value, str) for value in linkages):
+                problems.append(f"{where}: linkages must be a list of strings")
             else:
                 unknown = [value for value in linkages if value not in ALLOWED_LINKAGES]
                 if unknown:

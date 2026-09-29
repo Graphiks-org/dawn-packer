@@ -124,6 +124,33 @@ for bad_linkage in ("bogus", "static,bogus"):
     assert result.returncode != 0, f"linkage {bad_linkage!r} should have been rejected"
     assert "error" in result.stderr.lower(), result.stderr
 
+# An explicit null `linkages` means "both", exactly as the validator reads it
+# (absent and null are the same). The generator used to do `for linkage in
+# None` and crash on a matrix the validator had just blessed.
+null_fixture = pathlib.Path(tempfile.mkdtemp()) / "matrix.json"
+null_fixture.write_text(json.dumps({
+    "schemaVersion": 1,
+    "targets": [
+        {"kotlinTarget": "linuxX64", "triple": "x86_64-unknown-linux-gnu", "os": "linux",
+         "arch": "x64", "runner": "ubuntu-24.04", "toolchain": "",
+         "linkages": None, "backends": ["null"], "status": "v1"},
+    ],
+}), encoding="utf-8")
+
+validated = subprocess.run(
+    [sys.executable, "packaging/validate-matrix.py", str(null_fixture)],
+    capture_output=True, text=True,
+)
+assert validated.returncode == 0, validated.stderr
+
+env = dict(os.environ, MATRIX_FILE=str(null_fixture))
+result = subprocess.run([sys.executable, "scripts/gen-ci-matrix.py"],
+                        env=env, capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+assert [(e["target"], e["linkage"]) for e in entries(result)] == [
+    ("linuxX64", "static"), ("linuxX64", "shared"),
+], result.stdout
+
 print("ci matrix filtering OK")
 PY
 pass "gen-ci-matrix"

@@ -59,7 +59,9 @@ def main():
 
     include = []
     for entry in buildable:
-        for linkage in entry.get("linkages", LINKAGES):
+        # `linkages: null` means "both", the same as omitting the key; the
+        # validator already reads it that way, so the generator must too.
+        for linkage in entry.get("linkages") or LINKAGES:
             if wanted_linkages and linkage not in wanted_linkages:
                 continue
             include.append({
