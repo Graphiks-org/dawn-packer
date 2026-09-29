@@ -20,7 +20,14 @@ android_abi="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1]).get("an
 # Finding 2: optional per-target extra configure flags (e.g. macosArm64's
 # -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0). These do not touch the toolchain field,
 # so native targets still receive no host protoc.
-mapfile -t extra_cmake_args < <(python3 -c 'import json,sys
+# Read with a `while` loop, NOT `mapfile` (bash 4+): macOS ships /bin/bash 3.2
+# and the CI Apple jobs run this script with it.
+extra_cmake_args=()
+while IFS= read -r arg; do
+  if [ -n "$arg" ]; then
+    extra_cmake_args+=("$arg")
+  fi
+done < <(python3 -c 'import json,sys
 for arg in json.loads(sys.argv[1]).get("extraCmakeArgs", []):
     print(arg)' "$entry")
 
@@ -36,6 +43,12 @@ for backend in $backends; do
     *) echo "unknown backend: $backend" >&2; exit 2 ;;
   esac
 done
+# Guard before expanding "${backend_flags[@]}": under `set -u`, bash 3.2
+# (macOS /bin/bash) treats an empty array expansion as an unbound variable.
+if [ "${#backend_flags[@]}" -eq 0 ]; then
+  echo "no backends configured for $target" >&2
+  exit 2
+fi
 
 build_dir="$root/build/$target/$linkage_lc"
 install_dir="$root/dist/$target/$linkage_lc/install"

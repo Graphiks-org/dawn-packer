@@ -21,4 +21,14 @@ if printf '%s\n' "$linux" | grep -q -- 'CMAKE_OSX_DEPLOYMENT_TARGET'; then
   fail "linuxX64 must not receive a macOS deployment target"
 fi
 
+# Regression: macOS /bin/bash is 3.2, which has no `mapfile`. The CI Apple jobs
+# run this script with that interpreter, so a dry run under /bin/bash must work
+# and must still carry the extra cmake args.
+if [ -x /bin/bash ]; then
+  bashed="$(DAWN_PACKER_DRY_RUN=1 /bin/bash scripts/build-target.sh macosArm64 static)" \
+    || fail "build-target.sh failed under /bin/bash (bash 3.2 compatibility)"
+  printf '%s\n' "$bashed" | grep -q -- '-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0' \
+    || fail "/bin/bash run lost the extra cmake args"
+fi
+
 pass "matrix-extra-args"

@@ -16,8 +16,11 @@ git -C dawn checkout -- .
 git -C dawn clean -fd
 
 shopt -s nullglob
-patches=(patches/*.patch)
-for p in "${patches[@]}"; do
+# Iterate the glob directly: with nullglob, no matches means zero iterations.
+# Do NOT collect into an array and expand "${patches[@]}": under `set -u`,
+# bash 3.2 (macOS /bin/bash, used by the CI Apple jobs) treats an empty array
+# expansion as an unbound variable and aborts.
+for p in patches/*.patch; do
   echo "Applying $p"
   git -C dawn apply "$p"
 done
