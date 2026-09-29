@@ -18,7 +18,7 @@ backend, not the whole of Dawn.
 | MinGW sysroot | `/opt/homebrew/opt/mingw-w64/toolchain-x86_64` |
 | MinGW linker | `/opt/homebrew/opt/mingw-w64/bin/x86_64-w64-mingw32-ld` (GNU ld, **lld is not used**) |
 | CMake / Ninja | 4.4.3 / 1.13.2 |
-| Host `protoc` | Homebrew protobuf 36.2 (Dawn pins runtime 36.0 → **incompatible**) |
+| Host `protoc` | Homebrew protobuf 36.2 (Dawn pins runtime 36.0 -> **incompatible**) |
 | Disk (`/Volumes/Cache`) | 11.22 GiB free before, 11.05 GiB at peak (build trees), 11.21 GiB after cleanup |
 
 The toolchain file is `cmake/toolchains/mingw-x64.cmake`. The stock content from
@@ -78,7 +78,7 @@ cmake -S . -B build/mingwX64/null-only -G Ninja \
   -DDAWN_ENABLE_NULL=ON -DDAWN_ENABLE_D3D12=OFF -DDAWN_ENABLE_VULKAN=OFF
 ```
 
-Result: **fails at the same `protobuf.cmake:190` error** — confirming the
+Result: **fails at the same `protobuf.cmake:190` error** -- confirming the
 blocker is backend-independent.
 
 Adjusted configuration used to reach compilation (adds Win32 default overrides
@@ -96,7 +96,7 @@ cmake --build build/mingwX64/null-only --target dawn_packer
 
 Result: **BUILD SUCCEEDED** (exit 0, 694 steps). Produced
 `build/mingwX64/null-only/dawn/src/dawn/native/libwebgpu_dawn.a` (20 MB) whose
-members are `pe-x86-64` objects — a valid MinGW/GNU-ABI static library.
+members are `pe-x86-64` objects -- a valid MinGW/GNU-ABI static library.
 Conclusion: the portability core of Dawn (Abseil, Tint, dawn_native, null
 backend) compiles and archives cleanly under MinGW-w64.
 
@@ -129,7 +129,7 @@ In file included from .../src/dawn/native/d3d12/d3d12_platform.h:32:
 1 error generated.
 ```
 
-**Compile blocker A — `dawn/src/dawn/native/d3d/d3d_platform.h:44`.**
+**Compile blocker A -- `dawn/src/dawn/native/d3d/d3d_platform.h:44`.**
 `DXProgrammableCapture.h` is a Windows SDK "Graphics Tools / Graphics
 Diagnostics" header. MinGW-w64 does not ship it (`find` returns 0 copies) and the
 `#include` is unconditional. Dawn calls no API from it (grep finds only the
@@ -137,7 +137,7 @@ include and its comment). **This blocker is workaroundable without patching
 Dawn**: the spike already bypassed it with a throwaway stub placed in a
 temporary `-I` overlay, leaving `dawn/` untouched.
 
-**Compile blocker B — `dawn/src/dawn/native/d3d/D3DError.h:38`.** With A stubbed
+**Compile blocker B -- `dawn/src/dawn/native/d3d/D3DError.h:38`.** With A stubbed
 out, the next failure is:
 
 ```
@@ -163,12 +163,12 @@ $ clang++ --target=x86_64-w64-mingw32 --sysroot=... -std=c++20 -c hr2.cpp
 header in the same `-I` overlay. So A and B are compile-time papercuts, not on
 their own a reason to drop the target.
 
-**Decisive blocker — the D3D12 link/runtime step (not reached, because the build
+**Decisive blocker -- the D3D12 link/runtime step (not reached, because the build
 stops at the first compile error).** What cannot be papered over from outside
 `dawn/` is the link and runtime integration:
 
 - the D3D12 backend is linked against MSVC-style library names that GNU ld
-  cannot resolve — `dawn/src/dawn/native/CMakeLists.txt:310-311` (`user32.lib`,
+  cannot resolve -- `dawn/src/dawn/native/CMakeLists.txt:310-311` (`user32.lib`,
   `onecore_apiset.lib`; also `dxguid.lib` at :363). MinGW-w64 ships
   `libuser32.a` / `libonecore_apiset.a` / `libdxguid.a`, but Dawn asks for
   `*.lib`, which triggers no such import-library search and fails at link time;

@@ -1,35 +1,35 @@
-# Consommer dawn-packer depuis Kotlin
+# Consuming dawn-packer from Kotlin
 
-`dawn-packer` publie des bibliothèques natives [Dawn](https://dawn.googlesource.com/dawn)
-(WebGPU) précompilées, une archive par cible Kotlin/Native et par liaison
-(`static` ou `shared`). Cette page décrit le téléchargement, la vérification, la
-déclaration du cinterop et les dépendances système à lier côté consommateur.
+`dawn-packer` publishes prebuilt [Dawn](https://dawn.googlesource.com/dawn)
+(WebGPU) native libraries, one archive per Kotlin/Native target and per linkage
+(`static` or `shared`). This page describes downloading, verification, the
+cinterop declaration and the system dependencies to link on the consumer side.
 
-Le pin Dawn de référence est `chromium/8077` (voir `dawn-pin.env`) ; le slug
-utilisé dans les noms de fichiers remplace `/` par `-`, soit `chromium-8077`.
+The reference Dawn pin is `chromium/8077` (see `dawn-pin.env`); the slug used in
+file names replaces `/` with `-`, i.e. `chromium-8077`.
 
-## 1. Télécharger et vérifier une archive
+## 1. Download and verify an archive
 
-Les archives sont attachées aux GitHub Releases. Motif d'URL :
+Archives are attached to GitHub Releases. URL pattern:
 
 ```
 https://github.com/Graphiks-org/dawn-packer/releases/download/<release>/dawn-<dawnTagSlug>-<kotlinTarget>-<linkage>.tar.gz
 ```
 
-Exemples concrets pour la release `v0.1.0` :
+Concrete examples for release `v0.1.0`:
 
 ```
 https://github.com/Graphiks-org/dawn-packer/releases/download/v0.1.0/dawn-chromium-8077-linuxX64-static.tar.gz
 https://github.com/Graphiks-org/dawn-packer/releases/download/v0.1.0/dawn-chromium-8077-macosArm64-shared.tar.gz
 ```
 
-Chaque release contient aussi :
+Each release also contains:
 
-- `SHA256SUMS` — une ligne `<sha256>  <fichier>` par archive ;
-- `index.json` — agrégat des `manifest.json` de toutes les archives.
+- `SHA256SUMS` -- one line `<sha256>  <file>` per archive;
+- `index.json` -- aggregate of the `manifest.json` of every archive.
 
-Vérifier l'archive téléchargée (`SHA256SUMS` liste toutes les archives, d'où le
-filtrage sur le fichier voulu) :
+Verify the downloaded archive (`SHA256SUMS` lists every archive, hence the
+filtering on the wanted file):
 
 ```bash
 # macOS
@@ -39,34 +39,34 @@ grep 'dawn-chromium-8077-macosArm64-static.tar.gz' SHA256SUMS | shasum -a 256 -c
 grep 'dawn-chromium-8077-linuxX64-static.tar.gz' SHA256SUMS | sha256sum -c -
 ```
 
-Puis extraire dans un répertoire local, par exemple
-`third_party/dawn/<kotlinTarget>/<linkage>` :
+Then extract into a local directory, for example
+`third_party/dawn/<kotlinTarget>/<linkage>`:
 
 ```bash
 mkdir -p third_party/dawn/linuxX64/static
 tar xzf dawn-chromium-8077-linuxX64-static.tar.gz -C third_party/dawn/linuxX64/static
 ```
 
-### Contenu d'une archive
+### Archive contents
 
 ```text
-include/webgpu/webgpu.h                    # shim : #include "dawn/webgpu.h"
-include/webgpu/webgpu_cpp.h                # shim C++ (non utilisé en cinterop C)
-include/dawn/webgpu.h                      # API C WebGPU (le vrai en-tête)
-include/dawn/...                           # en-têtes Dawn supplémentaires
-lib/libwebgpu_dawn.a                       # variante static
-lib/libwebgpu_dawn.so | .dylib             # variante shared (à la place du .a)
+include/webgpu/webgpu.h                    # shim: #include "dawn/webgpu.h"
+include/webgpu/webgpu_cpp.h                # C++ shim (unused for C cinterop)
+include/dawn/webgpu.h                      # WebGPU C API (the real header)
+include/dawn/...                           # additional Dawn headers
+lib/libwebgpu_dawn.a                       # static variant
+lib/libwebgpu_dawn.so | .dylib             # shared variant (instead of the .a)
 manifest.json
 ```
 
-`manifest.json` décrit précisément l'archive : tag et **révision** Dawn
-(`dawn.tag`, `dawn.revision`), cible (`target.kotlinTarget`, `triple`, `os`,
-`arch`), `linkage`, `backends` et le `sha256`/`size` de chaque fichier. C'est la
-source de vérité pour vérifier ce qui a réellement été construit.
+`manifest.json` describes the archive precisely: Dawn tag and **revision**
+(`dawn.tag`, `dawn.revision`), target (`target.kotlinTarget`, `triple`, `os`,
+`arch`), `linkage`, `backends` and the `sha256`/`size` of every file. It is the
+source of truth for verifying what was actually built.
 
-## 2. Déclarer le cinterop
+## 2. Declaring the cinterop
 
-`src/nativeInterop/cinterop/webgpu.def`, variante **static** (exemple Apple) :
+`src/nativeInterop/cinterop/webgpu.def`, **static** variant (Apple example):
 
 ```def
 headers = dawn/webgpu.h
@@ -76,18 +76,18 @@ staticLibraries = libwebgpu_dawn.a
 libraryPaths = third_party/dawn/macosArm64/static/lib
 ```
 
-Points d'attention :
+Points to watch:
 
-- **L'API C vit dans `dawn/webgpu.h`**, pas dans `webgpu/webgpu.h` : ce dernier
-  n'est qu'un shim qui fait `#include "dawn/webgpu.h"`. `headers` et
-  `headerFilter` doivent donc viser `dawn/webgpu.h`. Si vous préférez pointer
-  `headers = webgpu/webgpu.h`, le filtre doit malgré tout autoriser le vrai
-  en-tête (`headerFilter = webgpu/** dawn/**` ou simplement `dawn/webgpu.h`),
-  sinon cinterop exclut toutes les déclarations et le klib est vide.
-- Un fichier `.def` par plateforme : les `staticLibraries` et `libraryPaths`
-  diffèrent selon la cible et la liaison.
+- **The C API lives in `dawn/webgpu.h`**, not in `webgpu/webgpu.h`: the latter
+  is only a shim that does `#include "dawn/webgpu.h"`. `headers` and
+  `headerFilter` must therefore target `dawn/webgpu.h`. If you prefer to point
+  `headers = webgpu/webgpu.h`, the filter must still allow the real
+  header (`headerFilter = webgpu/** dawn/**` or simply `dawn/webgpu.h`),
+  otherwise cinterop excludes all declarations and the klib is empty.
+- One `.def` file per platform: `staticLibraries` and `libraryPaths`
+  differ per target and linkage.
 
-Variante **shared** (le `.a` n'existe pas, on lie la bibliothèque dynamique) :
+**shared** variant (the `.a` does not exist, the dynamic library is linked):
 
 ```def
 headers = dawn/webgpu.h
@@ -96,7 +96,7 @@ compilerOpts = -Ithird_party/dawn/macosArm64/shared/include
 linkerOpts = -Lthird_party/dawn/macosArm64/shared/lib -lwebgpu_dawn
 ```
 
-## 3. Brancher la cible Gradle
+## 3. Wiring the Gradle target
 
 ```kotlin
 kotlin {
@@ -105,7 +105,7 @@ kotlin {
             defFile(project.file("src/nativeInterop/cinterop/webgpu.def"))
         }
 
-        // Variante static Apple : le consommateur doit lier les frameworks.
+        // Apple static variant: the consumer must link the frameworks.
         binaries.all {
             linkerOpts(
                 "-framework", "Metal",
@@ -120,89 +120,89 @@ kotlin {
 }
 ```
 
-Sur Linux, même structure avec `linuxX64 { ... }` et les options de lien de la
-section suivante. La même déclaration cinterop s'applique à `iosArm64`,
-`iosSimulatorArm64`, `iosX64`, `tvosArm64` et `tvosSimulatorArm64` (frameworks et
-toolchain identiques à la variante Apple ci-dessus).
+On Linux, same structure with `linuxX64 { ... }` and the link options from the
+next section. The same cinterop declaration applies to `iosArm64`,
+`iosSimulatorArm64`, `iosX64`, `tvosArm64` and `tvosSimulatorArm64` (frameworks and
+toolchain identical to the Apple variant above).
 
-## 4. Dépendances système à lier (variante static)
+## 4. System dependencies to link (static variant)
 
-La bibliothèque monolithique Dawn **n'embarque pas** les dépendances système :
-le consommateur les fournit au lien final. Ces listes sont exactement celles
-utilisées par `scripts/run-smoke-test.sh`, qui lie chaque archive réelle :
+The monolithic Dawn library **does not embed** the system dependencies:
+the consumer provides them at final link. These lists are exactly those
+used by `scripts/run-smoke-test.sh`, which links each real archive:
 
-- **Apple** (macOS / iOS / tvOS) :
+- **Apple** (macOS / iOS / tvOS):
 
   ```
   -framework Metal -framework Foundation -framework CoreGraphics \
   -framework QuartzCore -framework IOKit -framework IOSurface
   ```
 
-  `IOKit` et `IOSurface` sont réellement requis au lien (Dawn compile
-  `IOSurfaceUtils.cpp` pour toutes les plateformes Apple), même si un programme
-  minimal n'appelle que l'API `wgpu*`.
+  `IOKit` and `IOSurface` are genuinely required at link time (Dawn compiles
+  `IOSurfaceUtils.cpp` for all Apple platforms), even if a minimal program
+  only calls the `wgpu*` API.
 
-- **Linux** : `-lpthread -ldl -lm`. Ajouter au besoin les bibliothèques
-  X11/Wayland si votre application en dépend.
+- **Linux**: `-lpthread -ldl -lm`. Add X11/Wayland libraries as needed
+  if your application depends on them.
 
-- **Android** : les `.so` système (`liblog`, `libandroid`, `libatomic`) sont
-  fournis par le runtime Kotlin/Native. Voir la contrainte NDK en §6.
+- **Android**: the system `.so` files (`liblog`, `libandroid`, `libatomic`) are
+  provided by the Kotlin/Native runtime. See the NDK constraint in section 6.
 
-La bibliothèque Dawn est écrite en C++ même si son API est en C. Le lien final
-est donc un lien C++ : `scripts/run-smoke-test.sh` utilise un pilote C++
-(`c++`) et n'ajoute **pas** `-lc++` lui-même. En cinterop Kotlin/Native, la
-toolchain C++ de la cible est fournie par Kotlin/Native.
+The Dawn library is written in C++ even though its API is C. The final link
+is therefore a C++ link: `scripts/run-smoke-test.sh` uses a C++ driver
+(`c++`) and does **not** add `-lc++` itself. In Kotlin/Native cinterop, the
+C++ toolchain of the target is provided by Kotlin/Native.
 
-## 5. Variante shared : déployer la bibliothèque avec l'application
+## 5. Shared variant: deploy the library with the application
 
-L'archive `-shared` contient `lib/libwebgpu_dawn.so` (Linux/Android) ou
-`lib/libwebgpu_dawn.dylib` (Apple) ; elle doit être livrée **à côté** de
-l'application, pas seulement liée au build :
+The `-shared` archive contains `lib/libwebgpu_dawn.so` (Linux/Android) or
+`lib/libwebgpu_dawn.dylib` (Apple); it must be shipped **alongside** the
+application, not merely linked at build time:
 
-- **Android** : placer le `.so` de la bonne ABI dans
-  `src/androidMain/jniLibs/<abi>/libwebgpu_dawn.so` (ABIs : `arm64-v8a`,
+- **Android**: place the `.so` for the right ABI in
+  `src/androidMain/jniLibs/<abi>/libwebgpu_dawn.so` (ABIs: `arm64-v8a`,
   `armeabi-v7a`, `x86_64`, `x86`).
-- **Apple** : embarquer et signer le `.dylib` (par exemple dans
-  `Contents/Frameworks/`), et référencer son chemin via `@rpath`/`@loader_path`.
-  La bibliothèque partagée porte déjà ses dépendances Apple dans ses *load
-  commands* (`otool -L` liste CoreFoundation, Foundation, IOSurface, QuartzCore,
-  Cocoa, IOKit, Metal et `libc++`) ; le consommateur n'a donc pas à les relier à
-  nouveau.
-- **Linux/desktop** : installer le `.so` avec l'application et le rendre
-  trouvable (`RPATH`, `LD_LIBRARY_PATH`, ou à côté de l'exécutable).
+- **Apple**: embed and sign the `.dylib` (for example in
+  `Contents/Frameworks/`), and reference its path via `@rpath`/`@loader_path`.
+  The shared library already carries its Apple dependencies in its *load
+  commands* (`otool -L` lists CoreFoundation, Foundation, IOSurface, QuartzCore,
+  Cocoa, IOKit, Metal and `libc++`); the consumer therefore does not have to
+  link them again.
+- **Linux/desktop**: install the `.so` with the application and make it
+  findable (`RPATH`, `LD_LIBRARY_PATH`, or next to the executable).
 
-`scripts/run-smoke-test.sh` illustre le lien dynamique :
+`scripts/run-smoke-test.sh` illustrates the dynamic link:
 `-L<lib> -lwebgpu_dawn -Wl,-rpath,<lib>`.
 
-## 6. Contraintes et cibles non disponibles
+## 6. Constraints and unavailable targets
 
-- **macOS** (`macosArm64`) : la bibliothèque est construite avec
-  `-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0`, le minimum macOS de Kotlin/Native
-  2.4.20. Son `minos` effective est donc **12.0** (et non la version du runner
-  de build) ; `vtool -show-build` / `otool -l` sur un objet de l'archive le
-  confirme. Les cibles iOS/tvOS portent de même leur plancher via leur
+- **macOS** (`macosArm64`): the library is built with
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0`, Kotlin/Native 2.4.20's minimum macOS.
+  Its effective `minos` is therefore **12.0** (and not the build runner's
+  version); `vtool -show-build` / `otool -l` on an archive member
+  confirms it. The iOS/tvOS targets likewise carry their floor via their
   toolchain (`15.0`).
-- **Android** : les archives `androidNative*` sont construites avec le NDK
-  **27.3.13750724** (API 26, STL `c++_static`). La consumabilité Kotlin/Native
-  n'est **pas** établie : Kotlin/Native 2.4.20 lie sa propre libc++ statique
-  d'ère r19c, qui ne définit pas tous les symboles `std::__ndk1` référencés par
-  les objets compilés avec NDK 27. Le risque est décrit en détail dans
-  `docs/spikes/android.md` (« Open risk: consumer C++ runtime ») et n'est levé
-  ni par l'une ni par l'autre des remédiations candidates tant qu'un lien
-  cinterop KMP **et** une exécution sur appareil n'ont pas réussi. Ne pas
-  considérer ces cibles comme prouvées consommables.
-- **watchOS** (`watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`) :
-  pas d'archive. Les SDK watchOS ne fournissent ni `Metal.framework` ni
-  `IOSurface.framework`, et `arm64_32` (ILP32) échoue l'assertion
-  `sizeof(size_t) == 8` de Dawn.
-- **`mingwX64`** : pas d'archive. Le backend D3D12 exige des bibliothèques du
-  Windows SDK et une étape de copie de DLL que MinGW-w64 n'a pas.
-- Les en-têtes / le manifeste sont communs aux deux liaisons ; seule la
-  bibliothèque change. Vérifier la révision Dawn réellement construite dans
-  `manifest.json` avant de déboguer un comportement inattendu.
+- **Android**: the `androidNative*` archives are built with NDK
+  **27.3.13750724** (API 26, STL `c++_static`). Kotlin/Native consumability
+  is **not** established: Kotlin/Native 2.4.20 links its own static libc++
+  from the r19c era, which does not define all the `std::__ndk1` symbols
+  referenced by the objects compiled with NDK 27. The risk is described in
+  detail in `docs/spikes/android.md` ("Open risk: consumer C++ runtime") and is
+  not retired by either of the candidate remediations until a KMP cinterop link
+  **and** an on-device run have succeeded. Do not
+  consider these targets proven consumable.
+- **watchOS** (`watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`):
+  no archive. The watchOS SDKs provide neither `Metal.framework` nor
+  `IOSurface.framework`, and `arm64_32` (ILP32) fails Dawn's
+  `sizeof(size_t) == 8` assertion.
+- **`mingwX64`**: no archive. The D3D12 backend requires Windows SDK
+  libraries and a DLL copy step that MinGW-w64 does not have.
+- The headers / the manifest are common to both linkages; only the
+  library changes. Check the Dawn revision actually built in
+  `manifest.json` before debugging unexpected behavior.
 
-Voir aussi :
+See also:
 
-- `README.md` — état des cibles et build local ;
-- `packaging/manifest.schema.json` — contrat du manifeste livré ;
-- `docs/spikes/` — verdicts par plateforme.
+- `README.md` -- target status and local build;
+- `packaging/manifest.schema.json` -- the shipped manifest contract;
+- `docs/spikes/` -- per-platform verdicts.

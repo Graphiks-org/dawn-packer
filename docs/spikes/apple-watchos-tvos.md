@@ -1,6 +1,6 @@
 # Spike: Apple tvOS and watchOS
 
-**Verdicts:** `tvosArm64` = **`faisable`**, `tvosSimulatorArm64` = **`faisable`**,
+**Verdicts:** `tvosArm64` = **`feasible`**, `tvosSimulatorArm64` = **`feasible`**,
 `watchosSimulatorArm64` = **`infeasible`**, `watchosDeviceArm64` = **`infeasible`**,
 `watchosArm64` = **`infeasible`** (twice over: platform frameworks *and* ILP32).
 
@@ -29,7 +29,7 @@ a CMake or toolchain artifact; Dawn has no ILP32 code path.
 | SDKs | tvOS 26.5 (`appletvos` / `appletvsimulator`), watchOS 26.5 (`watchos` / `watchsimulator`) |
 | Compiler | Apple clang 21.0.0.21000101 (host `/usr/bin/cc` selected by CMake's platform modules) |
 | CMake / Ninja | 4.4.3 / 1.13.2 |
-| Host `protoc` | built from Dawn's pinned protobuf → `protoc-36.0.0` (see harness note) |
+| Host `protoc` | built from Dawn's pinned protobuf -> `protoc-36.0.0` (see harness note) |
 | Disk (`/Volumes/Cache`) | 11 GiB free before, 11 GiB after (build trees are reference-linked, ~75 MB each) |
 
 CMake's `Platform/tvOS.cmake` and `Platform/watchOS.cmake` are present in CMake
@@ -110,8 +110,8 @@ numbers are Mach-O `LC_BUILD_VERSION`: 3 = tvOS, 8 = tvOS Simulator.
 
 | Target | Toolchain | Command (after host protoc) | Result | First blocking error (truncated) | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| `tvosArm64` | `apple-tvos.cmake` | `cmake … -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/apple-tvos.cmake -DPROTOC_EXECUTABLE=… ; cmake --build … --target dawn_packer ; cmake --install …` | **success** (755 steps; `libwebgpu_dawn.a`, 21,085,328 B; arm64, platform 3, minos 15.0) | — | `faisable` |
-| `tvosSimulatorArm64` | `apple-tvos-simulator.cmake` | same, tvOS-simulator toolchain | **success** (installed `libwebgpu_dawn.a`, 21,143,272 B; arm64, platform 8, minos 15.0) | — | `faisable` |
+| `tvosArm64` | `apple-tvos.cmake` | `cmake ... -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/apple-tvos.cmake -DPROTOC_EXECUTABLE=... ; cmake --build ... --target dawn_packer ; cmake --install ...` | **success** (755 steps; `libwebgpu_dawn.a`, 21,085,328 B; arm64, platform 3, minos 15.0) | -- | `feasible` |
+| `tvosSimulatorArm64` | `apple-tvos-simulator.cmake` | same, tvOS-simulator toolchain | **success** (installed `libwebgpu_dawn.a`, 21,143,272 B; arm64, platform 8, minos 15.0) | -- | `feasible` |
 | `watchosSimulatorArm64` | `apple-watchos-simulator.cmake` | same, watch-simulator toolchain | **failure at configure** | `CMake Error at dawn/src/tint/CMakeLists.txt:571 (find_library): Could not find MetalFramework using the following names: Metal` | `infeasible` |
 | `watchosDeviceArm64` | `apple-watchos-device.cmake` | same, watch-device (arm64) toolchain | **failure at configure** | same `find_library(MetalFramework)` error | `infeasible` |
 | `watchosArm64` | `apple-watchos.cmake` | same, watch-device (`arm64_32`) toolchain | **failure at configure** | same `find_library(MetalFramework)` error (ILP32 blocker found in the null-only probe below) | `infeasible` |
@@ -120,7 +120,7 @@ All five also fail the unmodified `scripts/build-target.sh <target> static`
 wrapper command at the `protobuf.cmake:190` host-protoc gate above.
 
 The three watchOS SDKs contain `Foundation`, `CoreFoundation`, `CoreGraphics`
-and `QuartzCore`, but **no `Metal.framework` and no `IOSurface.framework`** —
+and `QuartzCore`, but **no `Metal.framework` and no `IOSurface.framework`** --
 unlike tvOS/iOS/macOS. `find_library(... REQUIRED)` therefore aborts configure.
 
 ## Supplementary probes: why watchOS fails
@@ -145,7 +145,7 @@ FAILED: dawn/src/dawn/common/CMakeFiles/dawn_common.dir/IOSurfaceUtils.cpp.o
 `-framework IOSurface` for **all** `APPLE` platforms, with no watchOS exclusion.
 watchOS ships no IOSurface, so this cannot work without patching Dawn.
 
-### `watchosArm64` (`arm64_32`, ILP32), null-only — decisive for the ILP32 question
+### `watchosArm64` (`arm64_32`, ILP32), null-only -- decisive for the ILP32 question
 
 Even with Metal and IOSurface out of the picture, the very first Dawn
 translation unit fails:
@@ -158,19 +158,19 @@ FAILED: dawn/src/dawn/utils/CMakeFiles/dawn_shared_utils.dir/assert.cc.o
 note: expression evaluates to '4 == 8'
 ```
 
-So **yes — `watchosArm64` (`arm64_32`, ILP32) fails**, and it fails
+So **yes -- `watchosArm64` (`arm64_32`, ILP32) fails**, and it fails
 independently of Metal/IOSurface: Dawn's `platform.h` selects the 64-bit branch
 for `DAWN_PLATFORM_IS_ARM64` and then statically asserts 8-byte `size_t`. ILP32
 `arm64_32` is not a supported Dawn ABI.
 
 ## Verdict
 
-- **tvOS (`tvosArm64`, `tvosSimulatorArm64`) — `faisable`.** Metal + null build,
+- **tvOS (`tvosArm64`, `tvosSimulatorArm64`) -- `feasible`.** Metal + null build,
   archive and install with unchanged toolchains and the brief's deployment
   floors. The only wrapper-level obstacle is the generic cross-compile host
   `protoc` requirement, which any iOS/tvOS CI job must satisfy anyway (Dawn CI
   does). Matrix status stays `v1`.
-- **watchOS (`watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`) —
+- **watchOS (`watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`) --
   `infeasible`.** Three independent blockers, any one of which is fatal:
   1. `watchos`/`watchsimulator` SDKs ship no `Metal.framework`
      (`dawn/src/tint/CMakeLists.txt:571`, configure-time `REQUIRED`);
@@ -183,7 +183,7 @@ for `DAWN_PLATFORM_IS_ARM64` and then statically asserts 8-byte `size_t`. ILP32
   sub-platform and gains an ILP32 path.
 
 Matrix changes: `watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`
-`spike` → `dropped`; `tvosArm64`/`tvosSimulatorArm64` unchanged (`v1`).
+`spike` -> `dropped`; `tvosArm64`/`tvosSimulatorArm64` unchanged (`v1`).
 `python3 packaging/validate-matrix.py targets/matrix.json` prints `matrix OK`.
 
 ## Disk
@@ -208,5 +208,5 @@ were removed after use.
 - `cmake/toolchains/apple-watchos-device.cmake` (new, `arm64`; Ruling P3)
 - `cmake/toolchains/apple-watchos-simulator.cmake` (new)
 - `docs/spikes/apple-watchos-tvos.md` (new, this file)
-- `targets/matrix.json` — three watchOS entries `spike` → `dropped`
+- `targets/matrix.json` -- three watchOS entries `spike` -> `dropped`
 - `dawn/` and existing scripts untouched.

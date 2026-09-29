@@ -1,61 +1,61 @@
 # dawn-packer
 
-Bibliothèques natives [Dawn](https://dawn.googlesource.com/dawn) (WebGPU) précompilées,
-publiées en GitHub Releases pour les cibles Kotlin/Native non-web.
+Prebuilt [Dawn](https://dawn.googlesource.com/dawn) (WebGPU) native libraries,
+published as GitHub Releases for non-web Kotlin/Native targets.
 
-Ce dépôt ne produit que les bibliothèques (en-têtes `webgpu.h` + `libwebgpu_dawn`) ;
-tout binding Kotlin/Native, JNI, Swift, etc. vit dans le projet consommateur.
+This repository only produces libraries (`webgpu.h` headers + `libwebgpu_dawn`);
+any Kotlin/Native, JNI, Swift, etc. binding lives in the consuming project.
 
-Le pin Dawn (`chromium/8077`) est déclaré dans `dawn-pin.env` (`DAWN_TAG`), résolu
-en un commit figé par le sous-module `dawn/` et enregistré dans
+The Dawn pin (`chromium/8077`) is declared in `dawn-pin.env` (`DAWN_TAG`), resolved
+to a fixed commit by the `dawn/` submodule and recorded in
 `build/dawn-revision.txt`.
 
-## État des cibles
+## Target status
 
-`targets/matrix.json` est la source de vérité (triple, runner, toolchain,
-backends, statut). Les cibles avec `status != "dropped"` sont construites par la
-CI et publiées ; les autres sont abandonnées après spike.
+`targets/matrix.json` is the source of truth (triple, runner, toolchain,
+backends, status). Targets with `status != "dropped"` are built by CI and
+published; the others are abandoned after the spike.
 
-Cibles qui produisent une archive (les deux liaisons en CI) :
+Targets that produce an archive (both linkages in CI):
 
-| Cible | Backends | Validation locale |
+| Target | Backends | Local validation |
 |---|---|---|
-| `macosArm64` | metal, null | archive + install (static + shared) ; smoke test exécuté |
-| `iosArm64` | metal, null | archive + install ; device : contrôle structurel |
+| `macosArm64` | metal, null | archive + install (static + shared); smoke test run |
+| `iosArm64` | metal, null | archive + install; device: structural check |
 | `iosSimulatorArm64` | metal, null | archive + install (cross) |
 | `iosX64` | metal, null | archive + install (cross) |
 | `tvosArm64` | metal, null | archive + install (cross) |
-| `tvosSimulatorArm64` | metal, null | arbre d'install seulement (archive en CI) |
-| `linuxX64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04`) ; rien en local |
-| `linuxArm64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04-arm`) ; rien en local |
-| `androidNativeArm64` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeArm32` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeX64` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeX86` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
+| `tvosSimulatorArm64` | metal, null | install tree only (archive in CI) |
+| `linuxX64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04`); nothing locally |
+| `linuxArm64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04-arm`); nothing locally |
+| `androidNativeArm64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
+| `androidNativeArm32` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
+| `androidNativeX64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
+| `androidNativeX86` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
 
-Cibles abandonnées (`dropped`, aucune archive) :
+Dropped targets (`dropped`, no archive):
 
-| Cible | Raison |
+| Target | Reason |
 |---|---|
-| `watchosArm64` | SDK watchOS sans `Metal.framework`/`IOSurface.framework` ; `arm64_32` (ILP32) échoue l'assertion `sizeof(size_t) == 8` de Dawn |
-| `watchosDeviceArm64` | SDK watchOS sans `Metal.framework` ni `IOSurface.framework` (configure `find_library(Metal) REQUIRED` échoue) |
-| `watchosSimulatorArm64` | idem : SDK watchOS sans Metal/IOSurface |
-| `mingwX64` | D3D12 dépend de bibliothèques du Windows SDK et d'une copie de DLL que MinGW-w64 ne fournit pas |
+| `watchosArm64` | watchOS SDK without `Metal.framework`/`IOSurface.framework`; `arm64_32` (ILP32) fails Dawn's `sizeof(size_t) == 8` assertion |
+| `watchosDeviceArm64` | watchOS SDK without `Metal.framework` or `IOSurface.framework` (configure `find_library(Metal) REQUIRED` fails) |
+| `watchosSimulatorArm64` | same: watchOS SDK without Metal/IOSurface |
+| `mingwX64` | D3D12 depends on Windows SDK libraries and a DLL copy that MinGW-w64 does not provide |
 
-Voir `docs/spikes/android.md`, `docs/spikes/apple-watchos-tvos.md` et
-`docs/spikes/mingw-x64.md` pour les verdicts détaillés.
+See `docs/spikes/android.md`, `docs/spikes/apple-watchos-tvos.md` and
+`docs/spikes/mingw-x64.md` for the detailed verdicts.
 
-## Build local
+## Local build
 
 ```bash
-bash scripts/sync.sh                       # sous-module Dawn + patches + build/dawn-revision.txt
+bash scripts/sync.sh                       # Dawn submodule + patches + build/dawn-revision.txt
 bash scripts/build-target.sh linuxX64 static
 bash scripts/package.sh linuxX64 static    # -> dist/linuxX64/dawn-chromium-8077-linuxX64-static.tar.gz
 ```
 
-Les cibles cross (iOS, tvOS, Android) ont besoin d'un `protoc` hôte, construit
-automatiquement par `scripts/build-target.sh` via `scripts/build-host-protoc.sh`.
-Les cibles Android exigent en plus `ANDROID_NDK_HOME` pointant sur le NDK
+The cross targets (iOS, tvOS, Android) need a host `protoc`, built
+automatically by `scripts/build-target.sh` via `scripts/build-host-protoc.sh`.
+Android targets additionally require `ANDROID_NDK_HOME` pointing at NDK
 **27.3.13750724**.
 
 ## Tests
@@ -64,25 +64,25 @@ Les cibles Android exigent en plus `ANDROID_NDK_HOME` pointant sur le NDK
 bash scripts/run-tests.sh
 ```
 
-L'agrégateur découvre et exécute `tests/test-*.sh`, affiche un résumé final
-(`SUMMARY: N passed, N skipped, N failed`) et liste les tests en échec le cas
-échéant. Les tests qui lancent un vrai build Dawn sont volontairement exclus de
-la CI rapide (voir `.github/workflows/build.yml`). Pour une boucle de retour
-rapide en local, `DAWN_PACKER_SKIP_HEAVY=1 bash scripts/run-tests.sh` saute les
-trois tests coûteux (`test-build-target.sh`, `test-shared-symbols.sh`,
-`test-build-target-protoc.sh`) et affiche une ligne `SKIP (heavy)` pour chacun ;
-sans cette variable, la suite complète s'exécute.
+The aggregator discovers and runs `tests/test-*.sh`, prints a final summary
+(`SUMMARY: N passed, N skipped, N failed`) and lists the failing tests when
+applicable. Tests that run a real Dawn build are deliberately excluded from the
+fast CI (see `.github/workflows/build.yml`). For a fast local feedback loop,
+`DAWN_PACKER_SKIP_HEAVY=1 bash scripts/run-tests.sh` skips the
+three expensive tests (`test-build-target.sh`, `test-shared-symbols.sh`,
+`test-build-target-protoc.sh`) and prints a `SKIP (heavy)` line for each;
+without that variable, the full suite runs.
 
-## Consommation depuis Kotlin
+## Consuming from Kotlin
 
-Voir `docs/consumption.md` : motif d'URL des archives, vérification
-`SHA256SUMS`, fichier `.def` cinterop, extrait Gradle et dépendances système à
-lier par plateforme.
+See `docs/consumption.md`: archive URL pattern, `SHA256SUMS`
+verification, cinterop `.def` file, Gradle snippet and system dependencies to
+link per platform.
 
-## Écarts connus
+## Known gaps
 
-Les actions GitHub sont référencées en `@v4`. L'épinglage par SHA prévu par la
-spec est un durcissement post-v1.
+GitHub actions are referenced as `@v4`. The SHA pinning required by the
+spec is a post-v1 hardening.
 
-La consumabilité des cibles `androidNative*` n'est pas prouvée : le risque
-libc++ Kotlin/Native/NDK 27 est documenté dans `docs/spikes/android.md`.
+The consumability of the `androidNative*` targets is not proven: the
+libc++ Kotlin/Native/NDK 27 risk is documented in `docs/spikes/android.md`.

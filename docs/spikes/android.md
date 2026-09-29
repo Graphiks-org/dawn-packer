@@ -19,7 +19,7 @@ run has **not** been performed.
 | Host | macOS 26.6.2, Apple Silicon (arm64); NDK prebuilt is a universal `darwin-x86_64` binary |
 | CMake / Ninja | 4.4.3 / 1.13.2 |
 | NDK pinned and used | **27.3.13750724** (`Pkg.Revision = 27.3.13750724`), clang 18.0.4 (r522817d) |
-| `ANDROID_NDK_HOME` at start | `/Users/chaos/Library/Android/sdk/ndk/27.0.12077973` — **this directory does not exist** |
+| `ANDROID_NDK_HOME` at start | `/Users/chaos/Library/Android/sdk/ndk/27.0.12077973` -- **this directory does not exist** |
 | NDK versions actually installed | 27.3.13750724, 28.2.13676358, 29.0.14206865, 30.0.15729638-beta2 |
 | API level / STL | `android-26`, `c++_static` |
 | Disk (`/Volumes/Cache`) | 11 GiB free before, 9.9 GiB at peak, 10 GiB after cleanup |
@@ -64,7 +64,7 @@ Two corrections to the brief's snippet, both applied and required:
 `CMAKE_ANDROID_STL_TYPE c++_static` is kept to match Kotlin/Native's Android
 flag set and CMake's Android default. Note it only affects the target **compile**
 flags: no STL runtime is linked into a static archive, so the shipped archive is
-**not** self-contained — the consumer chooses the runtime at final link (see
+**not** self-contained -- the consumer chooses the runtime at final link (see
 "Open risk: consumer C++ runtime").
 
 `android-26` matches Dawn's own upstream CI
@@ -81,7 +81,7 @@ machine those are already materialized in `~/.konan/dependencies/`:
 | Kotlin/Native bundled artifact | Value |
 | --- | --- |
 | Android compiler | clang **8.0.7**, "based on r346389c" (NDK **r19c** era) |
-| Android sysroot | API levels 16–29 (`android-26` present, with `libvulkan.so`) |
+| Android sysroot | API levels 16-29 (`android-26` present, with `libvulkan.so`) |
 | Link flags (`linkerKonanFlags.android_*`) | `-lm -lc++_static -lc++abi -landroid -llog -latomic` |
 | C++ ABI namespace | `std::__ndk1` (same inline namespace as NDK 27) |
 
@@ -111,7 +111,7 @@ define (verified with `llvm-nm` against `libwebgpu_dawn.a`, arm64):
 
 **This is a risk, not a solved constraint.** A shared library may carry undefined
 symbols, so a Kotlin/Native `android_arm64` link of the archive *succeeds* while
-leaving those symbols undefined against the bundled libc++ — the failure appears
+leaving those symbols undefined against the bundled libc++ -- the failure appears
 on device at load time, not at build time. Simply making NDK 27's
 `libc++_shared.so` available does **not** replace the r19c static runtime that
 Kotlin/Native also links: the app would carry two libc++ implementations sharing
@@ -125,8 +125,8 @@ end-to-end KMP cinterop link **plus an on-device run** before any `androidNative
 target is declared consumable:
 
 1. **Remediate at the consumer link.** Have the consumer link NDK 27's
-   `libc++_shared.so` explicitly — e.g. `linkerOpts` requesting `-lc++_shared`
-   with the ordering / `-Wl,--no-as-needed` needed to keep it — and package
+   `libc++_shared.so` explicitly -- e.g. `linkerOpts` requesting `-lc++_shared`
+   with the ordering / `-Wl,--no-as-needed` needed to keep it -- and package
    `libc++_shared.so` taken from NDK 27 into `jniLibs/<abi>/`. The r19c static
    libc++ that Kotlin/Native also links must be accounted for
    (`pickFirst` / symbol precedence), and the consumer must show that the NDK 27
@@ -188,8 +188,8 @@ cmake -S ... -B .../build/androidNativeArm64/static -G Ninja ... \
 ## Matrix changes
 
 * Added `"androidAbi"` to each `androidNative*` entry:
-  `androidNativeArm64` → `arm64-v8a`, `androidNativeArm32` → `armeabi-v7a`,
-  `androidNativeX64` → `x86_64`, `androidNativeX86` → `x86`.
+  `androidNativeArm64` -> `arm64-v8a`, `androidNativeArm32` -> `armeabi-v7a`,
+  `androidNativeX64` -> `x86_64`, `androidNativeX86` -> `x86`.
 * `scripts/build-target.sh` reads `androidAbi` (defaulting to `""`) and appends
   `-DCMAKE_ANDROID_ARCH_ABI=<value>` only when non-empty.
 * No status changed to `dropped`: all four ABIs are buildable and remain `v1`.
