@@ -12,12 +12,13 @@ permissions:
   contents: read
 
 jobs:
-  # Round 1 established: the image has MSVC 19.44 + Windows SDK 10.0.26100,
-  # MinGW-w64 at C:\mingw64\bin (not C:\msys64), dumpbin, and that Dawn builds
-  # for both linkages under MSVC. This job produces the shared install tree and
-  # asks the consumption question: can a GNU-ABI consumer link against the MSVC
-  # import library and run against the DLL?
-  msvc-shared:
+  # Rounds 1 and 2 answered the C-level question: MSVC builds the DLL, and MinGW
+  # gcc 14.2 links a C consumer against the MSVC import library and runs it
+  # against the DLL (compile 0, link 0, run 0, "dawn-packer smoke test OK").
+  # What is left is the actual acceptance criterion, plus one distribution
+  # constraint: the DLL depends on MSVCP140/VCRUNTIME140, so ask whether running
+  # the build with the static CRT removes that dependency.
+  static-crt:
     runs-on: windows-2022
     timeout-minutes: 150
     steps:
@@ -34,89 +35,80 @@ jobs:
           >>"%GITHUB_ENV%" echo LIB=%LIB%
           >>"%GITHUB_ENV%" echo PATH=%PATH%
 
-      - name: Configure (MSVC, Ninja, shared)
+      - name: Configure with the static CRT
         shell: pwsh
         run: |
-          cmake -S . -B build/spike-shared -G Ninja `
+          cmake -S . -B build/spike-crt -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DDAWN_PACKER_LINKAGE=SHARED `
             -DDAWN_EMIT_COVERAGE=OFF `
-            -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-shared" `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-crt" `
             -DDAWN_ENABLE_D3D12=ON `
-            -DDAWN_ENABLE_NULL=ON 2>&1 | Tee-Object -FilePath configure-shared.log
-          "=== Dawn configure summary ==="
-          Select-String -Path configure-shared.log -Pattern "Dawn (build|enable|use)" | ForEach-Object { $_.Line }
-          "=== the link flags MSVC is handed ==="
-          Select-String -Path build/spike-shared/build.ninja -Pattern "LINK_FLAGS" | Select-Object -First 2 | ForEach-Object { $_.Line }
+            -DDAWN_ENABLE_NULL=ON 2>&1 | Tee-Object -FilePath configure-crt.log | Select-Object -Last 3
+          "=== did the variable survive Dawn's own settings? ==="
+          Select-String -Path build/spike-crt/CMakeCache.txt -Pattern "CMAKE_MSVC_RUNTIME_LIBRARY" | ForEach-Object { $_.Line }
 
       - name: Build and install
         shell: pwsh
         run: |
-          cmake --build build/spike-shared --target dawn_packer 2>&1 | Tee-Object -FilePath build-shared.log | Select-Object -Last 5
-          cmake --install build/spike-shared --prefix "$PWD/dist/spike-shared"
-          "=== what the linker said about the ELF-only option ==="
-          Select-String -Path build-shared.log -Pattern "LNK4044|unrecognized option|version-script" | Select-Object -First 10 | ForEach-Object { $_.Line }
+          cmake --build build/spike-crt --target dawn_packer 2>&1 | Tee-Object -FilePath build-crt.log | Select-Object -Last 3
+          cmake --install build/spike-crt --prefix "$PWD/dist/spike-crt"
 
-      - name: Inspect the DLL
+      - name: Runtime dependencies with the static CRT
         shell: pwsh
         run: |
-          $dll = Get-ChildItem dist/spike-shared -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1
-          "dll: $($dll.FullName) ($($dll.Length) bytes)"
-          "=== runtime dependencies of the DLL ==="
-          & dumpbin /dependents $dll.FullName | Select-String -Pattern "\.dll" | ForEach-Object { $_.Line.Trim() }
-          "=== export table ==="
-          $exports = & dumpbin /exports $dll.FullName | Select-String -Pattern "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+\S+"
-          "export count: $($exports.Count)"
-          $nonApi = $exports | Where-Object { $_.Line -notmatch "_?(wgpu|dawn)" }
-          "exports outside wgpu/dawn: $($nonApi.Count)"
-          $nonApi | Select-Object -First 20 | ForEach-Object { $_.Line }
+          $dll = (Get-ChildItem dist/spike-crt -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
+          "dll: $dll"
+          $deps = & dumpbin /dependents $dll | Select-String -Pattern "\.dll" | ForEach-Object { $_.Line.Trim() }
+          $deps
+          $runtime = $deps | Where-Object { $_ -match "MSVCP|VCRUNTIME|ucrtbase" }
+          "MSVC runtime dependencies: $($runtime.Count)"
+          $runtime | ForEach-Object { "  $_" }
 
-      # The decisive probe: a GNU-ABI consumer (what Kotlin/Native's mingwX64
-      # uses) compiling a C file against the archive's headers, linking the MSVC
-      # import library, and running against the DLL.
-      - name: Consumption probe from the MinGW side
+      - name: Consumption probe, static CRT build
         shell: pwsh
         run: |
-          $dll = (Get-ChildItem dist/spike-shared -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
-          $lib = (Get-ChildItem dist/spike-shared -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
-          $mingw = "C:\mingw64\bin"
-          & "$mingw\gcc.exe" --version | Select-Object -First 1
-          New-Item -ItemType Directory -Force -Path probe | Out-Null
-          "=== compile the C consumer with MinGW gcc ==="
-          & "$mingw\gcc.exe" -I dist/spike-shared/include -c scripts/smoke-test/link-test.c -o probe/link-test.o 2>&1
+          $dll = (Get-ChildItem dist/spike-crt -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
+          $lib = (Get-ChildItem dist/spike-crt -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
+          # Match the exact include/webgpu/webgpu.h layout: a search for a
+          # directory named "webgpu" would also match webgpu_upstream/webgpu.
+          $header = Get-ChildItem dist/spike-crt -Recurse -Filter webgpu.h |
+            Where-Object { $_.FullName -match "\\include\\webgpu\\webgpu\.h$" } | Select-Object -First 1
+          if (-not $header) { throw "include/webgpu/webgpu.h not found in the install tree" }
+          $inc = $header.Directory.Parent.FullName
+          "include dir: $inc (header: $(Test-Path "$inc/webgpu/webgpu.h"))"
+          New-Item -ItemType Directory -Force -Path probe-crt | Out-Null
+          & "C:\mingw64\bin\gcc.exe" -I $inc -c scripts/smoke-test/link-test.c -o probe-crt/link-test.o 2>&1
           "compile exit: $LASTEXITCODE"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          "=== link it against the MSVC import library ($lib) ==="
-          & "$mingw\gcc.exe" probe/link-test.o $lib -o probe/link-test.exe 2>&1
+          & "C:\mingw64\bin\gcc.exe" probe-crt/link-test.o $lib -o probe-crt/link-test.exe 2>&1
           "link exit: $LASTEXITCODE"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Copy-Item $dll probe/ -Force
-          "=== run it ==="
-          & ./probe/link-test.exe
+          Copy-Item $dll probe-crt/ -Force
+          & ./probe-crt/link-test.exe
           "run exit: $LASTEXITCODE"
 
-      - name: Upload the install tree
+      - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: spike-windows-install
+          name: spike-static-crt
           path: |
-            dist/spike-shared/bin/*.dll
-            dist/spike-shared/lib/*.lib
-            dist/spike-shared/include
-            configure-shared.log
-            build-shared.log
+            dist/spike-crt/bin/*.dll
+            dist/spike-crt/lib/*.lib
+            configure-crt.log
+            build-crt.log
           if-no-files-found: warn
 
-  # The acceptance criterion for the deliverable: a real mingwX64 Kotlin/Native
-  # project with a cinterop .def, linked against the MSVC import library and run.
-  # Best effort in this round: the run is still useful if it fails, because it
-  # records where the toolchain disagrees.
+  # The acceptance criterion: a real mingwX64 Kotlin/Native cinterop project
+  # linked against the MSVC import library and executed. Round 2 failed on the
+  # probe itself, not on the toolchain: the .def's compilerOpts did not reach the
+  # compiler, so the header was not found. This round passes the include
+  # directory on the command line as well, uses forward slashes, and checks the
+  # resolved paths before invoking anything.
   kotlin-native:
-    needs: msvc-shared
+    needs: msvc-shared-warm
     runs-on: windows-2022
     timeout-minutes: 120
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -126,53 +118,69 @@ jobs:
           name: spike-windows-install
           path: spike-install
 
+      - name: Locate what the probe needs
+        shell: pwsh
+        run: |
+          "=== downloaded layout ==="
+          Get-ChildItem spike-install -Recurse -Depth 3 | ForEach-Object { $_.FullName }
+          # Match the exact include/webgpu/webgpu.h layout: a search for a
+          # directory named "webgpu" would also match webgpu_upstream/webgpu.
+          $header = Get-ChildItem spike-install -Recurse -Filter webgpu.h |
+            Where-Object { $_.FullName -match "\\include\\webgpu\\webgpu\.h$" } | Select-Object -First 1
+          if (-not $header) { throw "include/webgpu/webgpu.h not found after download" }
+          $inc = $header.Directory.Parent.FullName
+          $lib = (Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
+          "include dir: $inc (exists: $(Test-Path $inc))"
+          "import lib : $lib (exists: $(Test-Path $lib))"
+          "header     : $(Test-Path "$inc/webgpu/webgpu.h")"
+
       - name: Fetch the Kotlin/Native compiler
         shell: pwsh
         run: |
           $version = "2.4.20"
           $url = "https://github.com/JetBrains/kotlin/releases/download/v$version/kotlin-native-prebuilt-windows-x86_64-$version.zip"
-          "downloading $url"
           Invoke-WebRequest -Uri $url -OutFile kotlin-native.zip
           "downloaded: $((Get-Item kotlin-native.zip).Length) bytes"
           Expand-Archive kotlin-native.zip -DestinationPath konan
-          Get-ChildItem konan | Select-Object -ExpandProperty Name
-          Get-ChildItem konan -Recurse -Filter "cinterop*" | Select-Object -First 5 -ExpandProperty FullName
-          Get-ChildItem konan -Recurse -Filter "kotlinc-native*" | Select-Object -First 5 -ExpandProperty FullName
+          $konan = (Get-ChildItem konan -Directory | Select-Object -First 1).FullName
+          "konan: $konan"
+          "compiler version:"
+          & "$konan\bin\kotlinc-native.bat" -version 2>&1 | Select-Object -First 5
 
       - name: cinterop against webgpu.h
         shell: pwsh
         run: |
           $konan = (Get-ChildItem konan -Directory | Select-Object -First 1).FullName
-          $bin = "$konan\bin"
-          $install = "$PWD/spike-install"
-          $lib = (Get-ChildItem $install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
-          $inc = (Get-ChildItem $install -Recurse -Directory -Filter include | Select-Object -First 1).FullName
-          "konan: $konan"
-          "install: $install"
+          $header = Get-ChildItem spike-install -Recurse -Filter webgpu.h |
+            Where-Object { $_.FullName -match "\\include\\webgpu\\webgpu\.h$" } | Select-Object -First 1
+          $inc = ($header.Directory.Parent.FullName) -replace "\\", "/"
+          $lib = ((Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName) -replace "\\", "/"
+          "include: $inc"
           "import lib: $lib"
-          "include dir: $inc"
           New-Item -ItemType Directory -Force -Path knproj | Out-Null
+          # The .def gets forward slashes; the include path is also passed on the
+          # command line so a .def parsing quirk cannot hide the real error.
           @"
           headers = webgpu/webgpu.h
           package = webgpu
           compilerOpts = -I$inc
           linkerOpts = $lib
           "@ | Set-Content -Path knproj/webgpu.def -Encoding ascii
+          "=== def ==="
           Get-Content knproj/webgpu.def
           Push-Location knproj
-          & "$bin\cinterop.bat" -def webgpu.def -o webgpu -target mingw_x64 2>&1 | Tee-Object -FilePath ../cinterop.log | Select-Object -Last 20
+          & "$konan\bin\cinterop.bat" -def webgpu.def -o webgpu -target mingw_x64 -compiler-option -I$inc 2>&1 | Tee-Object -FilePath ../cinterop.log | Select-Object -Last 25
           "cinterop exit: $LASTEXITCODE"
           Get-ChildItem | Select-Object -ExpandProperty Name
+          if (-not (Test-Path webgpu.klib)) { "no klib produced" }
           Pop-Location
 
       - name: Build and run the Kotlin/Native consumer
         shell: pwsh
         run: |
           $konan = (Get-ChildItem konan -Directory | Select-Object -First 1).FullName
-          $bin = "$konan\bin"
-          $install = "$PWD/spike-install"
-          $lib = (Get-ChildItem $install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
-          $dll = (Get-ChildItem $install -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
+          $lib = ((Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName) -replace "\\", "/"
+          $dll = (Get-ChildItem spike-install -Recurse -Filter webgpu_dawn.dll | Select-Object -First 1).FullName
           @"
           import webgpu.*
           import kotlinx.cinterop.*
@@ -188,7 +196,8 @@ jobs:
           }
           "@ | Set-Content -Path knproj/main.kt -Encoding ascii
           Push-Location knproj
-          & "$bin\kotlinc-native.bat" main.kt -library webgpu -target mingw_x64 -o app -linker-option $lib 2>&1 | Tee-Object -FilePath ../kotlinc-native.log | Select-Object -Last 25
+          "=== kotlinc-native ==="
+          & "$konan\bin\kotlinc-native.bat" main.kt -library webgpu -target mingw_x64 -o app -linker-option $lib 2>&1 | Tee-Object -FilePath ../kotlinc-native.log | Select-Object -Last 25
           "kotlinc-native exit: $LASTEXITCODE"
           Get-ChildItem | Select-Object -ExpandProperty Name
           if (Test-Path app.exe) {
@@ -196,9 +205,7 @@ jobs:
             "=== running the Kotlin/Native binary ==="
             & ./app.exe
             "run exit: $LASTEXITCODE"
-          } else {
-            "app.exe was not produced"
-          }
+          } else { "app.exe was not produced" }
           Pop-Location
 
       - name: Upload the Kotlin/Native evidence
@@ -212,3 +219,47 @@ jobs:
             knproj/webgpu.def
             knproj/main.kt
           if-no-files-found: warn
+
+  # Supplies the shared install tree the Kotlin/Native job consumes. Kept as its
+  # own job so the acceptance criterion can be re-run without rebuilding Dawn.
+  msvc-shared-warm:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Enter the MSVC environment
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+
+      - name: Build and install (shared, dynamic CRT)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/spike-shared -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DDAWN_PACKER_LINKAGE=SHARED `
+            -DDAWN_EMIT_COVERAGE=OFF `
+            -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-shared" `
+            -DDAWN_ENABLE_D3D12=ON `
+            -DDAWN_ENABLE_NULL=ON 2>&1 | Tee-Object -FilePath configure-shared.log | Select-Object -Last 3
+          cmake --build build/spike-shared --target dawn_packer 2>&1 | Select-Object -Last 3
+          cmake --install build/spike-shared --prefix "$PWD/dist/spike-shared"
+          Get-ChildItem dist/spike-shared -Recurse -Include *.dll, *.lib | Select-Object FullName, Length | Format-Table -AutoSize | Out-String
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-windows-install
+          path: |
+            dist/spike-shared/bin/*.dll
+            dist/spike-shared/lib/*.lib
+            dist/spike-shared/include
+            configure-shared.log
+          if-no-files-found: error
