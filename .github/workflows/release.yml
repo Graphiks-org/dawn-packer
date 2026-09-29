@@ -17,7 +17,7 @@ permissions:
 jobs:
   release:
     # Only a successful build triggered by a version tag gets released. The
-    # `event == 'push'` guard excludes a workflow_dispatch run started on a v…
+    # `event == 'push'` guard excludes a workflow_dispatch run started on a v...
     # branch, which must never publish. For `workflow_run`, `github.ref` is the
     # default branch, so the tag is read from `workflow_run.head_branch`.
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v')

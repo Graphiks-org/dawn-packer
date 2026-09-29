@@ -11,7 +11,7 @@ source ./dawn-pin.env
 # initialising them blows the disk budget; build tasks fetch deps explicitly.
 git submodule update --init dawn
 
-# Repartir d'un sous-module propre avant d'appliquer les éventuels patches.
+# Start from a clean submodule before applying any patches.
 git -C dawn checkout -- .
 git -C dawn clean -fd
 

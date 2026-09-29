@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Ruling P8: never `recursive` — Dawn's own submodules (v8, LLVM,
+          # Ruling P8: never `recursive` -- Dawn's own submodules (v8, LLVM,
           # SwiftShader, ANGLE, ...) are multi-GB and unnecessary. `dawn` is
           # initialised here (non-recursively) and Dawn's CMake dependency
           # fetching populates third_party.

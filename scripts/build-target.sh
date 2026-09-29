@@ -91,7 +91,7 @@ mkdir -p "$build_dir" "$install_dir"
 cmake "${cmake_args[@]}" "${backend_flags[@]}"
 
 # Finding 4: capture the real compiler identity and the exact configure
-# arguments so packaging can record provenance (spec §5.3) instead of empty
+# arguments so packaging can record provenance (spec section 5.3) instead of empty
 # objects. Written next to the install tree; scripts/package.sh picks it up when
 # present and degrades gracefully when absent.
 provenance="$root/dist/$target/$linkage_lc/packer-provenance.json"

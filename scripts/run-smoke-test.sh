@@ -5,7 +5,7 @@ archive="${1:?usage: run-smoke-test.sh <archive.tar.gz> [--link-only]}"
 mode="${2:-run}"
 
 # Ruling P2/P11: the library is C++ even though the API is C, so use a C++
-# linker driver (it links libc++ itself — do not add -lc++). Link flags are
+# linker driver (it links libc++ itself -- do not add -lc++). Link flags are
 # OS-specific; Darwin has no libdl and needs frameworks.
 cxx="${CXX:-c++}"
 case "$(uname -s)" in

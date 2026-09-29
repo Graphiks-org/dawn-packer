@@ -68,7 +68,7 @@ def main():
         print("ERROR: no headers or libraries found in install dir", file=sys.stderr)
         return 1
 
-    # Spec §5.3 promises compiler id/version and the cmake flags. Fall back to the
+    # Spec section 5.3 promises compiler id/version and the cmake flags. Fall back to the
     # historical empty objects when no provenance file is supplied.
     compiler = {}
     cmake = {"buildType": "Release"}
