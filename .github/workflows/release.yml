@@ -71,16 +71,18 @@ jobs:
       - name: Create release (idempotent)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed via env (not interpolated into the script) so a hostile tag
+          # name cannot inject shell syntax into a step holding contents: write.
+          TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.workflow_run.head_branch }}"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --notes "Dawn packer release $TAG"
 
       - name: Upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.workflow_run.head_branch }}"
           shopt -s nullglob
           gh release upload "$TAG" release-assets/*.tar.gz release-assets/index.json release-assets/SHA256SUMS --clobber
