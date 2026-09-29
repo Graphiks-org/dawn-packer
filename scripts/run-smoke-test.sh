@@ -41,10 +41,14 @@ else
   exit 1
 fi
 
-# -x c++ / -x none forces C++ for the .c source without treating the archive as
-# a source file, and avoids clang's "treating 'c' input as 'c++'" warning.
-"$cxx" -I"$include_dir" -x c++ "$root/scripts/smoke-test/link-test.c" -x none \
-  "${link_opts[@]}" "${link_flags[@]}" -o "$work/link-test"
+# Compile the C source as C++ (Dawn's API is C but the link needs the C++
+# runtime) and link it separately. Doing it in two steps avoids both clang
+# warnings the one-shot form produced: '-x c++' on a .c file ("treating c input
+# as c++") and '-x none' with no later input ("after last input file has no
+# effect"). stderr must stay empty.
+"$cxx" -I"$include_dir" -x c++ -c "$root/scripts/smoke-test/link-test.c" \
+  -o "$work/link-test.o"
+"$cxx" "$work/link-test.o" "${link_opts[@]}" "${link_flags[@]}" -o "$work/link-test"
 echo "link OK"
 
 if [ "$mode" = "--link-only" ]; then

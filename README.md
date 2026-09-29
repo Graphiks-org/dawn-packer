@@ -61,14 +61,15 @@ Les cibles Android exigent en plus `ANDROID_NDK_HOME` pointant sur le NDK
 ## Tests
 
 ```bash
-for t in tests/test-*.sh; do bash "$t"; done
+bash scripts/run-tests.sh
 ```
 
-Un agrégateur `scripts/run-tests.sh` exécute toute la suite. Les tests qui
-lancent un vrai build Dawn sont volontairement exclus de la CI rapide (voir
-`.github/workflows/build.yml`). Pour une boucle de retour rapide en local,
-`DAWN_PACKER_SKIP_HEAVY=1 bash scripts/run-tests.sh` saute les trois tests
-coûteux (`test-build-target.sh`, `test-shared-symbols.sh`,
+L'agrégateur découvre et exécute `tests/test-*.sh`, affiche un résumé final
+(`SUMMARY: N passed, N skipped, N failed`) et liste les tests en échec le cas
+échéant. Les tests qui lancent un vrai build Dawn sont volontairement exclus de
+la CI rapide (voir `.github/workflows/build.yml`). Pour une boucle de retour
+rapide en local, `DAWN_PACKER_SKIP_HEAVY=1 bash scripts/run-tests.sh` saute les
+trois tests coûteux (`test-build-target.sh`, `test-shared-symbols.sh`,
 `test-build-target-protoc.sh`) et affiche une ligne `SKIP (heavy)` pour chacun ;
 sans cette variable, la suite complète s'exécute.
 
