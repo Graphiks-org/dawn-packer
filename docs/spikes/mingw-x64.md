@@ -2,10 +2,11 @@
 
 **Verdict: `infeasible`** (for the target's `d3d12` + `null` backend set).
 
-Kotlin/Native's Windows target is MinGW-based, but Dawn's D3D12 backend depends
-on Windows-SDK-only headers and MinGW-hostile include assumptions. A **null-only**
-library does build, so the failure is specifically the D3D12 backend, not the
-whole of Dawn.
+Kotlin/Native's Windows target is MinGW-based, but Dawn's D3D12 backend is tied
+to MSVC/Windows-SDK conventions: its CMake links MSVC-style `.lib` names and
+copies a DLL from an installed Windows SDK, none of which MinGW-w64 provides.
+A **null-only** library does build, so the failure is specifically the D3D12
+backend, not the whole of Dawn.
 
 ## Environment
 
@@ -99,6 +100,10 @@ members are `pe-x86-64` objects — a valid MinGW/GNU-ABI static library.
 Conclusion: the portability core of Dawn (Abseil, Tint, dawn_native, null
 backend) compiles and archives cleanly under MinGW-w64.
 
+Note this run used `-DDAWN_BUILD_PROTOBUF=OFF` (and `-DTINT_BUILD_IR_BINARY=OFF`),
+so the "portability core compiles" result is scoped to that configuration and
+does **not** cover protobuf / the Tint IR-binary path.
+
 ### 3. d3d12 + null configure + build
 
 ```bash
@@ -124,16 +129,16 @@ In file included from .../src/dawn/native/d3d12/d3d12_platform.h:32:
 1 error generated.
 ```
 
-**Blocker A — `dawn/src/dawn/native/d3d/d3d_platform.h:44`.** `DXProgrammableCapture.h`
-is a Windows SDK "Graphics Tools / Graphics Diagnostics" header. MinGW-w64 does
-not ship it (`find` returns 0 copies), and the `#include` is unconditional and
-unguarded. Dawn does not call any API from it (grep finds only the include and
-its comment), so the dependency is gratuitous, but removing it means patching
-`dawn/`, which this spike is not allowed to do.
+**Compile blocker A — `dawn/src/dawn/native/d3d/d3d_platform.h:44`.**
+`DXProgrammableCapture.h` is a Windows SDK "Graphics Tools / Graphics
+Diagnostics" header. MinGW-w64 does not ship it (`find` returns 0 copies) and the
+`#include` is unconditional. Dawn calls no API from it (grep finds only the
+include and its comment). **This blocker is workaroundable without patching
+Dawn**: the spike already bypassed it with a throwaway stub placed in a
+temporary `-I` overlay, leaving `dawn/` untouched.
 
-**Blocker B — `dawn/src/dawn/native/d3d/D3DError.h:38`.** After stubbing out
-`DXProgrammableCapture.h` (in a temporary `-I` overlay, without touching
-`dawn/`), the next failure is:
+**Compile blocker B — `dawn/src/dawn/native/d3d/D3DError.h:38`.** With A stubbed
+out, the next failure is:
 
 ```
 .../src/dawn/native/d3d/D3DError.h:38:29: error: unknown type name 'HRESULT'
@@ -153,27 +158,54 @@ $ clang++ --target=x86_64-w64-mingw32 --sysroot=... -std=c++20 -c hr2.cpp
 # compiles
 ```
 
-**Further (not reached) blockers.** Even if A and B were patched, the D3D12 link
-step uses MSVC-style library names that GNU ld cannot resolve —
-`dawn/src/dawn/native/CMakeLists.txt:310-311` (`user32.lib`,
-`onecore_apiset.lib`; also `dxguid.lib` at :363) — and
-`dawn/src/dawn/native/CMakeLists.txt:1097-1099` invokes
-`AddCopyWindowsSDKDLLTarget` (`dawn/third_party/CopyWindowsSDKDLL.cmake:47`)
-which reads the Windows SDK location from the registry and copies
-`d3dcompiler_47.dll` from `$WIN10_SDK_PATH/bin/<ver>/x64/`. MSVC/MinGW has no
-such SDK.
+**This blocker is also workaroundable without patching Dawn**, e.g. a forced
+`-include windows.h` on the D3D12 translation units, or a `winerror`-prelude
+header in the same `-I` overlay. So A and B are compile-time papercuts, not on
+their own a reason to drop the target.
+
+**Decisive blocker — the D3D12 link/runtime step (not reached, because the build
+stops at the first compile error).** What cannot be papered over from outside
+`dawn/` is the link and runtime integration:
+
+- the D3D12 backend is linked against MSVC-style library names that GNU ld
+  cannot resolve — `dawn/src/dawn/native/CMakeLists.txt:310-311` (`user32.lib`,
+  `onecore_apiset.lib`; also `dxguid.lib` at :363). MinGW-w64 ships
+  `libuser32.a` / `libonecore_apiset.a` / `libdxguid.a`, but Dawn asks for
+  `*.lib`, which triggers no such import-library search and fails at link time;
+- `dawn/src/dawn/native/CMakeLists.txt:1097-1099` invokes
+  `AddCopyWindowsSDKDLLTarget` (`dawn/third_party/CopyWindowsSDKDLL.cmake:47`),
+  which locates the Windows SDK through the registry
+  (`HKLM\...\Windows Kits\Installed Roots`) and copies `d3dcompiler_47.dll` from
+  `$WIN10_SDK_PATH/bin/<ver>/x64/`. MinGW-w64 provides neither the registry key
+  nor that SDK layout.
+
+Working around these means patching Dawn's CMake (un-bundling `.lib` names,
+disabling the SDK DLL copy) **and** shipping Windows SDK import libraries and a
+`d3dcompiler_47.dll`, which is out of scope and fragile.
 
 ## Verdict
 
 `infeasible`.
 
-Dawn's **D3D12** backend cannot be built with MinGW-w64 on this host because it
-unconditionally includes the Windows-SDK-only `DXProgrammableCapture.h`
-(`d3d_platform.h:44`) and assumes MSVC/Windows-SDK include and link conventions
-(`HRESULT` from `<winerror.h>`, `*.lib` link inputs, Windows SDK DLL copy). The
-**null** backend alone does build, but the matrix entry for `mingwX64` requires
-`d3d12` + `null`; a null-only Windows library has no GPU backend and is not
-useful, so `mingwX64` is dropped.
+The demonstrated **compile** blockers are, individually, workaroundable without
+patching Dawn: A (`DXProgrammableCapture.h` missing) via a sysroot/`-I` overlay
+stub, and B (`HRESULT` from `<winerror.h>` alone) via a forced `-include
+windows.h` or an overlay prelude. On their own they would not justify dropping
+the target.
+
+The **decisive** blocker is the D3D12 **link/runtime** step: Dawn's D3D12 CMake
+requires Windows-SDK library names (`user32.lib`, `onecore_apiset.lib`,
+`dxguid.lib`) that MinGW-w64 does not provide, and runs a Windows-SDK DLL copy
+step (`AddCopyWindowsSDKDLLTarget`) that needs an installed Windows SDK at a
+registry-derived path to copy `d3dcompiler_47.dll`. Making that work requires
+patching Dawn's CMake/backend and shipping Windows-SDK import libraries and the
+DLL, which is out of scope and fragile. The **null** backend alone builds, but
+the `mingwX64` entry requires `d3d12` + `null`; a null-only Windows library has
+no GPU backend, so `mingwX64` is dropped.
+
+This verdict is pin-specific: re-spike if upstream ever guards the
+`DXProgrammableCapture.h` include and drops the MSVC/Windows-SDK link
+assumptions.
 
 ## Fallback plan (chosen)
 

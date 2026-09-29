@@ -1,5 +1,10 @@
 # Toolchain: x86_64-pc-windows-gnu (Kotlin/Native mingwX64).
 #
+# STATUS: the mingwX64 target is DROPPED. This file only builds the null backend;
+# the D3D12 backend is blocked by Dawn's MSVC/Windows-SDK link/runtime
+# requirements. See docs/spikes/mingw-x64.md for the full verdict. Do not treat
+# this as a working Windows GPU toolchain.
+#
 # Builds with LLVM clang against a MinGW-w64 sysroot (GNU ABI), NOT MSVC.
 # On macOS the host clang (/usr/bin/clang) cannot emit PE objects or link with
 # MinGW, so this file prefers a full LLVM clang and pairs it with the GNU ld
