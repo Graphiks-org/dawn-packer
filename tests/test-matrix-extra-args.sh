@@ -54,4 +54,20 @@ if [ -x /bin/bash ]; then
     || fail "/bin/bash run lost the extra cmake args"
 fi
 
+# The backend vocabulary must cover everything Dawn actually builds on Windows.
+# Dawn forces D3D11 on for Win32, so the matrix has to be able to name it.
+fixture="$(mktemp -d)/matrix.json"
+python3 - "$fixture" <<'PY'
+import json, sys
+open(sys.argv[1], "w", encoding="utf-8").write(json.dumps({
+    "schemaVersion": 1,
+    "targets": [
+        {"kotlinTarget": "mingwX64", "triple": "x86_64-pc-windows-gnu", "os": "windows",
+         "arch": "x64", "runner": "windows-2022", "toolchain": "",
+         "backends": ["d3d12", "d3d11", "vulkan", "null"], "status": "v1"},
+    ],
+}))
+PY
+python3 packaging/validate-matrix.py "$fixture" >/dev/null || fail "d3d11 is not a known backend"
+
 pass "matrix-extra-args"

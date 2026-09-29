@@ -36,6 +36,7 @@ for backend in $backends; do
   case "$backend" in
     metal) backend_flags+=("-DDAWN_ENABLE_METAL=ON") ;;
     vulkan) backend_flags+=("-DDAWN_ENABLE_VULKAN=ON") ;;
+    d3d11) backend_flags+=("-DDAWN_ENABLE_D3D11=ON") ;;
     d3d12) backend_flags+=("-DDAWN_ENABLE_D3D12=ON") ;;
     gles) backend_flags+=("-DDAWN_ENABLE_OPENGLES=ON") ;;
     desktop_gl) backend_flags+=("-DDAWN_ENABLE_DESKTOP_GL=ON") ;;

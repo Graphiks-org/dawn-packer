@@ -5,7 +5,7 @@ import sys
 
 REQUIRED = {"kotlinTarget", "triple", "os", "arch", "runner", "toolchain", "backends", "status"}
 ALLOWED_OS = {"linux", "macos", "ios", "tvos", "watchos", "windows", "android"}
-ALLOWED_BACKENDS = {"metal", "vulkan", "d3d12", "gles", "desktop_gl", "null"}
+ALLOWED_BACKENDS = {"metal", "vulkan", "d3d11", "d3d12", "gles", "desktop_gl", "null"}
 ALLOWED_STATUS = {"v1", "spike", "dropped"}
 ALLOWED_LINKAGES = {"static", "shared"}
 # Each Android target names exactly one NDK ABI, forwarded by
