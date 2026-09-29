@@ -1,0 +1,65 @@
+name: spike-windows-static
+
+# Throwaway: measures whether an MSVC-built static Dawn library can be linked
+# from MinGW. Triggered by changes to this file only, so the implementation
+# commits that follow cannot re-run it, and it is deleted once it has answered.
+on:
+  push:
+    branches: ["feat/windows-msvc-target"]
+    paths: [".github/workflows/spike-windows-static.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  static-link:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Enter the MSVC environment
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+          >>"%GITHUB_ENV%" echo VCToolsInstallDir=%VCToolsInstallDir%
+
+      - name: Build and install (static)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/spike-static -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release -DDAWN_PACKER_LINKAGE=STATIC `
+            -DDAWN_EMIT_COVERAGE=OFF -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-static" `
+            -DDAWN_ENABLE_D3D12=ON -DDAWN_ENABLE_NULL=ON 2>&1 | Select-Object -Last 3
+          cmake --build build/spike-static --target dawn_packer 2>&1 | Select-Object -Last 3
+          cmake --install build/spike-static --prefix "$PWD/dist/spike-static"
+
+      - name: Attempt a MinGW link against the MSVC static library
+        shell: pwsh
+        run: |
+          $lib = (Get-ChildItem dist/spike-static -Recurse -Filter webgpu_dawn.lib | Select-Object -First 1).FullName
+          $header = Get-ChildItem dist/spike-static -Recurse -Filter webgpu.h |
+            Where-Object { $_.FullName -match "\\include\\webgpu\\webgpu\.h$" } | Select-Object -First 1
+          $inc = $header.Directory.Parent.FullName
+          $sdk = "C:\Program Files (x86)\Windows Kits\10\Lib"
+          $ucrt = (Get-ChildItem $sdk -Recurse -Filter ucrt.lib -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          $vc = $env:VCToolsInstallDir
+          "library      : $lib"
+          "vcruntime    : $(Test-Path "${vc}lib\x64\vcruntime.lib")"
+          "msvcp140     : $(Test-Path "${vc}lib\x64\msvcp140.lib")"
+          "ucrt         : $ucrt"
+          New-Item -ItemType Directory -Force -Path probe | Out-Null
+          & "C:\mingw64\bin\gcc.exe" -I $inc -c scripts/smoke-test/link-test.c -o probe/link-test.o 2>&1
+          "compile exit: $LASTEXITCODE"
+          & "C:\mingw64\bin\gcc.exe" probe/link-test.o $lib "${vc}lib\x64\vcruntime.lib" "${vc}lib\x64\msvcp140.lib" $ucrt -o probe/link-test.exe 2>&1 | Select-Object -First 40
+          "link exit: $LASTEXITCODE"
+          if (Test-Path probe/link-test.exe) {
+            & ./probe/link-test.exe
+            "run exit: $LASTEXITCODE"
+          } else { "no executable produced" }
