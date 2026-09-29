@@ -56,6 +56,9 @@ include/dawn/webgpu.h                      # WebGPU C API (the real header)
 include/dawn/...                           # additional Dawn headers
 lib/libwebgpu_dawn.a                       # static variant
 lib/libwebgpu_dawn.so | .dylib             # shared variant (instead of the .a)
+bin/webgpu_dawn.dll                        # Windows shared variant, alongside its runtime
+bin/msvcp140.dll | vcruntime140*.dll
+lib/webgpu_dawn.lib                        # Windows import library instead of the .a
 manifest.json
 ```
 
@@ -195,8 +198,11 @@ application, not merely linked at build time:
   no archive. The watchOS SDKs provide neither `Metal.framework` nor
   `IOSurface.framework`, and `arm64_32` (ILP32) fails Dawn's
   `sizeof(size_t) == 8` assertion.
-- **`mingwX64`**: no archive. The D3D12 backend requires Windows SDK
-  libraries and a DLL copy step that MinGW-w64 does not have.
+- **`mingwX64`**: the archive is built with MSVC (D3D12, D3D11, Vulkan and null
+  backends) and consumed through its import library; the consumer triple stays
+  `x86_64-pc-windows-gnu`. The shared archive carries `webgpu_dawn.dll` and the
+  MSVC runtime DLLs it needs, so copying `bin/` next to the executable is the
+  whole deployment. No redistributable or system package is required.
 - The headers / the manifest are common to both linkages; only the
   library changes. Check the Dawn revision actually built in
   `manifest.json` before debugging unexpected behavior.
