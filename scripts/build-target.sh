@@ -103,41 +103,16 @@ compiler_version=""
 if [ -n "$compiler_path" ] && [ -x "$compiler_path" ]; then
   compiler_version="$("$compiler_path" --version 2>/dev/null | head -n1 || true)"
 fi
-python3 - "$provenance" "$compiler_path" "$compiler_version" "$compiler_flags" -- \
-  "${cmake_args[@]}" "${backend_flags[@]}" <<'PY'
-import json
-import os
-import re
-import sys
-
-out, compiler_path, compiler_version, compiler_flags = sys.argv[1:5]
-flag_start = sys.argv.index("--") + 1
-cmake_flags = sys.argv[flag_start:]
-
-version_line = compiler_version.strip()
-name = os.path.basename(compiler_path) if compiler_path else ""
-haystack = version_line.lower()
-if "apple clang" in haystack:
-    compiler_id = "apple-clang"
-elif "clang" in haystack:
-    compiler_id = "clang"
-elif "gnu" in haystack or name in {"gcc", "g++"}:
-    compiler_id = "gcc"
-else:
-    compiler_id = name or "unknown"
-
-match = re.search(r"\d+(?:\.\d+)+", version_line)
-version = match.group(0) if match else version_line
-cxx_flags = [token for token in re.split(r"\s+", compiler_flags.strip()) if token]
-
-provenance = {
-    "compiler": {"id": compiler_id, "version": version, "flags": cxx_flags},
-    "cmake": {"buildType": "Release", "flags": cmake_flags},
-}
-with open(out, "w", encoding="utf-8") as handle:
-    json.dump(provenance, handle, indent=2)
-    handle.write("\n")
-PY
+# The literal `--` ends argparse option parsing: every cmake flag starts with
+# `-D`, which argparse would otherwise try to read as an option. `--cmake-cache`
+# supplies the version when `--version` was rejected (MSVC's `cl`).
+python3 packaging/provenance.py \
+  --compiler-name "$(basename "$compiler_path")" \
+  --version-line "$compiler_version" \
+  --cmake-cache "$cmake_cache" \
+  --cxx-flags "$compiler_flags" \
+  --out "$provenance" -- \
+  "${cmake_args[@]}" "${backend_flags[@]}"
 
 cmake --build "$build_dir" --target dawn_packer
 cmake --install "$build_dir" --prefix "$install_dir"
