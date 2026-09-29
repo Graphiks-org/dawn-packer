@@ -1,10 +1,20 @@
 name: build
 
-# Manual dispatch and version tags only. A manual run always builds the full
-# matrix generated from targets/matrix.json:
+# Manual dispatch and version tags only. A manual run builds the full matrix
+# generated from targets/matrix.json unless `targets` / `linkages` narrow it:
 #   gh workflow run build.yml --ref master
+#   gh workflow run build.yml --ref master -f targets=linuxX64 -f linkages=static
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated kotlinTarget ids (empty = the full matrix)"
+        required: false
+        type: string
+      linkages:
+        description: "Comma-separated linkages: static, shared (empty = both)"
+        required: false
+        type: string
   push:
     tags: ["v*"]
 
@@ -27,7 +37,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate build matrix
         id: gen
-        run: echo "matrix=$(python3 scripts/gen-ci-matrix.py)" >> "$GITHUB_OUTPUT"
+        env:
+          # Empty on a push event, which is the full matrix.
+          TARGETS: ${{ inputs.targets }}
+          LINKAGES: ${{ inputs.linkages }}
+        run: |
+          set -euo pipefail
+          # Assignment form: a non-zero exit from the generator fails the step
+          # here, where the message is readable, instead of silently writing an
+          # empty matrix into GITHUB_OUTPUT.
+          matrix="$(python3 scripts/gen-ci-matrix.py)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "matrix entries: $(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])["include"]))' "$matrix")"
 
   # Genuinely fast contract tests. Deliberately excludes every test that runs a
   # real Dawn build or duplicates the per-target `build` job below:

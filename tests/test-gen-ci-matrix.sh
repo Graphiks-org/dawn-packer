@@ -45,4 +45,52 @@ expected_pairs = {(t, l) for t in expected for l in ("static", "shared")}
 assert set(pairs) == expected_pairs, f"target/linkage coverage mismatch: {expected_pairs ^ set(pairs)}"
 print("ci matrix covers", len(included), "targets,", len(data["include"]), "entries")
 PY
+
+# Targeted runs: the `targets` / `LINKAGES` environment variables narrow the
+# matrix so a single job can be dispatched while iterating on a build fix.
+python3 - <<'PY'
+import json, os, subprocess, sys
+
+def run(targets="", linkages=""):
+    env = dict(os.environ, TARGETS=targets, LINKAGES=linkages)
+    return subprocess.run(
+        [sys.executable, "scripts/gen-ci-matrix.py"],
+        env=env, capture_output=True, text=True,
+    )
+
+def entries(result):
+    return json.loads(result.stdout)["include"]
+
+full = entries(run())
+assert len(full) == 24, f"expected 24 entries unfiltered, got {len(full)}"
+
+# One target, both linkages.
+only_linux = entries(run(targets="linuxX64"))
+assert [(e["target"], e["linkage"]) for e in only_linux] == [
+    ("linuxX64", "static"), ("linuxX64", "shared"),
+], only_linux
+assert {e["runner"] for e in only_linux} == {"ubuntu-24.04"}, only_linux
+
+# Several targets and a single linkage, tolerating spaces after the commas.
+pair = entries(run(targets="linuxX64, macosArm64", linkages="static"))
+assert [(e["target"], e["linkage"]) for e in pair] == [
+    ("linuxX64", "static"), ("macosArm64", "static"),
+], pair
+assert {e["runner"] for e in pair} == {"ubuntu-24.04", "macos-15"}, pair
+
+# A dropped target stays unreachable even when asked for by name.
+for bad in ("nosuchtarget", "mingwX64", "watchosArm64"):
+    result = run(targets=bad)
+    assert result.returncode != 0, f"{bad} should have been rejected"
+    assert "error" in result.stderr.lower(), result.stderr
+
+# An unknown linkage must fail loudly: an empty matrix would report a green run
+# that built nothing.
+for bad_linkage in ("bogus", "static,bogus"):
+    result = run(linkages=bad_linkage)
+    assert result.returncode != 0, f"linkage {bad_linkage!r} should have been rejected"
+    assert "error" in result.stderr.lower(), result.stderr
+
+print("ci matrix filtering OK")
+PY
 pass "gen-ci-matrix"
