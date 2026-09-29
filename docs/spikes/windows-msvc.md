@@ -224,6 +224,52 @@ requirements rather than toolchain limits:
 * consuming cinterop declarations requires
   `@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)`.
 
+### 7. The static linkage links, and is still not shippable
+
+The answer was not the expected one. An MSVC static library does link from MinGW,
+with three extra import libraries:
+
+```powershell
+& gcc.exe probe/link-test.o dist/spike-static/lib/webgpu_dawn.lib `
+    "<VC Tools>\lib\x64\vcruntime.lib" `
+    "<VC Tools>\lib\x64\oldnames.lib" `
+    "<Windows Kits>\Lib\10.0.26100.0\ucrt\x64\ucrt.lib" `
+    -o probe/link-test.exe
+```
+
+```
+=== attempt 1: dynamic CRT import libraries only (3 libraries) ===
+link exit: 0
+STATIC LINK (dynamic CRT): OK
+```
+
+So the static question is not settled by link failure. It is settled by four
+observations, none of which is about the link itself:
+
+* the three libraries that make it work are `vcruntime.lib` and `oldnames.lib`
+  from the MSVC toolset and `ucrt.lib` from the Windows SDK. None of them can
+  travel in the archive: an archive ships headers and a built library, not an SDK,
+  and the Visual C++ redistribution terms cover the runtime DLLs for app-local
+  deployment, not the toolset's import libraries. A consumer would therefore have
+  to supply an MSVC and Windows SDK installation, which breaks the property every
+  other target has -- copy the archive, link, run, no system prerequisite;
+* GNU ld only half understands the objects it was given: the link emits a stream of
+  `Warning: corrupt .drectve at end of def file`, one per object carrying MSVC
+  linker directives. It works, by tolerating what it does not parse;
+* the executable produced in attempt 1 was deliberately not run, so runtime
+  behaviour with a mixed MSVC/MinGW CRT is unmeasured. Attempt 2, which added the
+  static CRT libraries, failed outright
+  (`libcmt.lib: error adding symbols: file format not recognized`), so the one
+  configuration that could have made the runtime self-contained is not reachable
+  either;
+* the design's own success criterion is that a `mingwX64` consumer needs no system
+  prerequisite beyond Windows itself.
+
+Verdict for the static linkage: **not shipped**, and `linkages` stays `["shared"]`.
+This is a decision on the archive's contract rather than on the link, and it is
+reversible: the command above is the whole of what a future static archive would
+require its consumers to reproduce.
+
 ## Verdict
 
 `feasible`, for the `d3d12` + `null` entry the matrix declares. Unlike the MinGW
@@ -237,7 +283,9 @@ The route is:
   and no toolchain file (host == target, so `protoc` builds natively and the
   matrix entry's `toolchain` becomes empty);
 * `DAWN_BUILD_MONOLITHIC_LIBRARY=SHARED` yielding `bin/webgpu_dawn.dll` and
-  `lib/webgpu_dawn.lib`;
+  `lib/webgpu_dawn.lib`. The static linkage is deliberately not shipped: it links
+  from MinGW, but only with MSVC and Windows SDK import libraries that no archive
+  can carry (section 7);
 * export control left to `__declspec(dllexport)`: 387 exported symbols, none
   outside `wgpu*`/`dawn*`.
 
