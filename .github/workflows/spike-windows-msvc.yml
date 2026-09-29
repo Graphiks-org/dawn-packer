@@ -102,14 +102,13 @@ jobs:
           }
           "@ | Set-Content -Path knproj/main.kt -Encoding ascii
           Push-Location knproj
-          "=== attempt 1: library name plus an explicit search directory ==="
-          & "$konan\bin\kotlinc-native.bat" main.kt -library webgpu -repo . -target mingw_x64 -o app -linker-option $lib 2>&1 | Tee-Object -FilePath ../kotlinc-native-1.log | Select-Object -Last 15
-          "attempt 1 exit: $LASTEXITCODE"
-          if (-not (Test-Path app.exe)) {
-            "=== attempt 2: the klib passed as an input ==="
-            & "$konan\bin\kotlinc-native.bat" main.kt webgpu.klib -target mingw_x64 -o app -linker-option $lib 2>&1 | Tee-Object -FilePath ../kotlinc-native-2.log | Select-Object -Last 15
-            "attempt 2 exit: $LASTEXITCODE"
-          }
+          # `-library` takes a path, not a name (see the compiler's own help:
+          # "-library (-l) <path>   Link with the given library."). `-repo` does
+          # not exist in this version, and a klib passed as a positional input is
+          # rejected as "not a Kotlin file".
+          "=== kotlinc-native: -library with the klib path ==="
+          & "$konan\bin\kotlinc-native.bat" main.kt -library "$PWD/webgpu.klib" -target mingw_x64 -o app -linker-option $lib 2>&1 | Tee-Object -FilePath ../kotlinc-native.log | Select-Object -Last 20
+          "kotlinc-native exit: $LASTEXITCODE"
           Get-ChildItem | Select-Object -ExpandProperty Name
           if (Test-Path app.exe) {
             Copy-Item $dll .
@@ -128,8 +127,7 @@ jobs:
         with:
           name: spike-kotlin-native
           path: |
-            kotlinc-native-1.log
-            kotlinc-native-2.log
+            kotlinc-native.log
             knproj/webgpu.def
             knproj/main.kt
           if-no-files-found: warn
