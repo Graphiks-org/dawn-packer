@@ -264,8 +264,16 @@ jobs:
       # DAWN_NATIVE_SHARED_LIBRARY and DAWN_NATIVE_IMPLEMENTATION
       # (src/dawn/native/CMakeLists.txt:1049-1055), which makes DAWN_NATIVE_EXPORT
       # expand to __declspec(dllexport) (include/dawn/native/dawn_native_export.h),
-      # so Dawn's native C++ API is exported on purpose: the MSVC-mangled
-      # (`?`-prefixed) Dawn symbols are expected, third-party symbols are the leak.
+      # so Dawn's native C++ API is exported on purpose. The accepted set is the
+      # public C API plus MSVC-mangled names whose outermost namespace is `dawn`.
+      #
+      # Do not classify third-party names by substring: of the 111 mangled Dawn
+      # exports, 7 contain `std@@` inside a template argument and 1 contains
+      # `tint` by pure accident
+      # (ResetInternalDeviceForTesting@Adapter@native@dawn@@), so a substring test
+      # fails on Dawn's own symbols. A real Abseil or Tint leak carries `absl` or
+      # `tint` as its outermost namespace, which the namespace rule catches
+      # exactly.
       - name: Shared symbol check (Windows)
         if: runner.os == 'Windows' && matrix.linkage == 'shared'
         shell: bash
@@ -283,31 +291,51 @@ jobs:
           tar xzf "${archives[0]}" -C "$work"
           dll="$(find "$work/bin" -name 'webgpu_dawn.dll' -print -quit)"
           [ -n "$dll" ] || { echo "::error::webgpu_dawn.dll missing from ${archives[0]}"; exit 1; }
-          exports="$(dumpbin //exports "$dll" | awk '/^ +[0-9]+ +[0-9A-F]+ +[0-9A-F]+ +/ {print $4}')"
-          [ -n "$exports" ] || { echo "::error::no exports found in $dll"; exit 1; }
-          # The public C API must be present. It is the same 276 symbols the
-          # Linux shared library exports.
-          c_api="$(printf '%s\n' "$exports" | grep -Ec '^_?(wgpu|dawn)[A-Za-z0-9_]*$' || true)"
-          if [ "$c_api" -eq 0 ]; then
-            echo "::error::the public WebGPU C API is not exported from $dll"
-            exit 1
-          fi
-          # Nothing from a third-party library may leak into the table.
-          third_party="$(printf '%s\n' "$exports" | grep -Ei 'absl|tint|spirv|protobuf|__cxa|std@@' || true)"
-          if [ -n "$third_party" ]; then
-            echo "::error::third-party symbols leaked into $dll:"
-            printf '%s\n' "$third_party" | head -n 20
-            exit 1
-          fi
-          # Everything else must be an MSVC-mangled name; anything else is an
-          # unknown leak that the C API and third-party checks did not classify.
-          unknown="$(printf '%s\n' "$exports" | grep -Ev '^[?]|^_?(wgpu|dawn)[A-Za-z0-9_]*$' | grep -v '^$' || true)"
-          if [ -n "$unknown" ]; then
-            echo "::error::unrecognised exports in $dll, expected only the C API and MSVC-mangled Dawn symbols:"
-            printf '%s\n' "$unknown" | head -n 20
-            exit 1
-          fi
-          echo "shared symbol check OK: $c_api C API exports, 0 third-party, 0 unknown"
+          exports_file="$work/exports.txt"
+          dumpbin //exports "$dll" | awk '/^ +[0-9]+ +[0-9A-F]+ +[0-9A-F]+ +/ {print $4}' > "$exports_file"
+          [ -s "$exports_file" ] || { echo "::error::no exports found in $dll"; exit 1; }
+          python3 - "$exports_file" <<'PY'
+          import sys
+
+
+          def is_public_c_api(name):
+              # Not mangled, and after stripping any leading underscore starts
+              # with the wgpu or dawn C API prefix.
+              if name.startswith("?"):
+                  return False
+              return name.lstrip("_").startswith(("wgpu", "dawn"))
+
+
+          def is_dawn_mangled(name):
+              # MSVC decoration: the outermost namespace is the last @-separated
+              # segment before the first @@.
+              if not name.startswith("?"):
+                  return False
+              scope = name.split("@@", 1)[0]
+              parts = scope.split("@")
+              return bool(parts) and parts[-1] == "dawn"
+
+
+          names = [line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+          if not names:
+              sys.exit("no exports found")
+          c_api = [name for name in names if is_public_c_api(name)]
+          if not c_api:
+              sys.exit("the public WebGPU C API is not exported")
+          leaks = [name for name in names if not is_public_c_api(name) and not is_dawn_mangled(name)]
+          if leaks:
+              print(
+                  "unrecognised exports in the DLL (neither the C API nor a Dawn-native mangled name):",
+                  file=sys.stderr,
+              )
+              for name in leaks[:20]:
+                  print(f"  {name}", file=sys.stderr)
+              sys.exit(1)
+          print(
+              f"shared symbol check OK: {len(c_api)} C API exports, "
+              f"{len(names) - len(c_api)} Dawn-native mangled exports, 0 leaks"
+          )
+          PY
 
       # Host-native archive: link against it and run the smoke binary.
       - name: Smoke test (host target)
