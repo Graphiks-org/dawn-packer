@@ -64,6 +64,39 @@ def entries(result):
 full = entries(run())
 assert len(full) == 24, f"expected 24 entries unfiltered, got {len(full)}"
 
+# The generator reads MATRIX_FILE, which lets a test describe a target without
+# touching the shipped matrix.
+import tempfile, pathlib
+fixture = pathlib.Path(tempfile.mkdtemp()) / "matrix.json"
+fixture.write_text(json.dumps({
+    "schemaVersion": 1,
+    "targets": [
+        {"kotlinTarget": "linuxX64", "triple": "x86_64-unknown-linux-gnu", "os": "linux",
+         "arch": "x64", "runner": "ubuntu-24.04", "toolchain": "",
+         "backends": ["null"], "status": "v1"},
+        {"kotlinTarget": "mingwX64", "triple": "x86_64-pc-windows-gnu", "os": "windows",
+         "arch": "x64", "runner": "windows-2022", "toolchain": "",
+         "linkages": ["shared"], "backends": ["d3d12", "null"], "status": "v1"},
+    ],
+}), encoding="utf-8")
+
+def run_fixture(targets="", linkages=""):
+    env = dict(os.environ, TARGETS=targets, LINKAGES=linkages, MATRIX_FILE=str(fixture))
+    return subprocess.run([sys.executable, "scripts/gen-ci-matrix.py"],
+                          env=env, capture_output=True, text=True)
+
+# A target that declares one linkage yields one entry for it.
+declared = entries(run_fixture())
+assert [(e["target"], e["linkage"]) for e in declared] == [
+    ("linuxX64", "static"), ("linuxX64", "shared"), ("mingwX64", "shared"),
+], declared
+
+# The caller filter still applies on top of the declaration.
+filtered = entries(run_fixture(linkages="static"))
+assert [(e["target"], e["linkage"]) for e in filtered] == [
+    ("linuxX64", "static"),
+], filtered
+
 # One target, both linkages.
 only_linux = entries(run(targets="linuxX64"))
 assert [(e["target"], e["linkage"]) for e in only_linux] == [

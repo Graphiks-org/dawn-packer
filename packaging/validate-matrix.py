@@ -7,6 +7,7 @@ REQUIRED = {"kotlinTarget", "triple", "os", "arch", "runner", "toolchain", "back
 ALLOWED_OS = {"linux", "macos", "ios", "tvos", "watchos", "windows", "android"}
 ALLOWED_BACKENDS = {"metal", "vulkan", "d3d12", "gles", "desktop_gl", "null"}
 ALLOWED_STATUS = {"v1", "spike", "dropped"}
+ALLOWED_LINKAGES = {"static", "shared"}
 # Each Android target names exactly one NDK ABI, forwarded by
 # scripts/build-target.sh as -DCMAKE_ANDROID_ARCH_ABI.
 ALLOWED_ANDROID_ABI = {"arm64-v8a", "armeabi-v7a", "x86_64", "x86"}
@@ -52,6 +53,22 @@ def errors(data):
         if extra is not None:
             if not isinstance(extra, list) or not all(isinstance(arg, str) for arg in extra):
                 problems.append(f"{where}: extraCmakeArgs must be a list of strings")
+        # Optional: the linkages a target actually ships. Absent means both.
+        # Windows ships the shared variant only, because an MSVC static library
+        # has no C boundary for a GNU consumer to link through.
+        linkages = entry.get("linkages")
+        if linkages is not None:
+            if not isinstance(linkages, list) or not linkages:
+                problems.append(f"{where}: linkages must be a non-empty list")
+            else:
+                unknown = [value for value in linkages if value not in ALLOWED_LINKAGES]
+                if unknown:
+                    problems.append(
+                        f"{where}: bad linkage(s) {unknown} "
+                        f"(allowed: {sorted(ALLOWED_LINKAGES)})"
+                    )
+                elif len(set(linkages)) != len(linkages):
+                    problems.append(f"{where}: duplicate linkages {linkages}")
         if not entry["backends"]:
             problems.append(f"{where}: backends must not be empty")
         for backend in entry["backends"]:

@@ -21,4 +21,10 @@ if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad
   fail "non-list extraCmakeArgs should be rejected"
 fi
 python3 "$root/scripts/matrix.py" get linuxX64 | grep -q '"triple": "x86_64-unknown-linux-gnu"' || fail "matrix.py get failed"
+# linkages, when present, must be a non-empty subset of static/shared.
+for fixture in matrix-bad-linkages-empty matrix-bad-linkages-unknown; do
+  if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/$fixture.json" >/dev/null 2>&1; then
+    fail "$fixture should be rejected"
+  fi
+done
 pass "validate-matrix"
