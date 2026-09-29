@@ -14,6 +14,9 @@ esac
 entry="$(python3 scripts/matrix.py get "$target")"
 toolchain="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["toolchain"])' "$entry")"
 backends="$(python3 scripts/matrix.py backends "$target")"
+# Ruling P14: Android serves four ABIs but a single CMake toolchain file cannot
+# pick between them, so the ABI lives on the matrix entry and is forwarded here.
+android_abi="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1]).get("androidAbi", ""))' "$entry")"
 
 backend_flags=()
 for backend in $backends; do
@@ -38,6 +41,9 @@ cmake_args=(
   -DDAWN_EMIT_COVERAGE=OFF
   -DCMAKE_INSTALL_PREFIX="$install_dir"
 )
+if [ -n "$android_abi" ]; then
+  cmake_args+=("-DCMAKE_ANDROID_ARCH_ABI=$android_abi")
+fi
 if [ -n "$toolchain" ]; then
   cmake_args+=("-DCMAKE_TOOLCHAIN_FILE=$root/$toolchain")
   # Dawn's protobuf.cmake hard-fails when cross-compiling unless a host protoc
