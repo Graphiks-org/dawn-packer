@@ -1,0 +1,203 @@
+name: spike-windows-msvc
+
+# Throwaway spike workflow. Triggered by a push on its own branch because
+# `workflow_dispatch` only lists workflows that already exist on the default
+# branch, and this spike must not touch master before it has a verdict.
+on:
+  push:
+    branches: ["spike/windows-msvc"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap: what the windows-2022 image actually provides, before trusting any
+  # of it. The MinGW and Windows SDK answers decide what the consumption probe
+  # can even attempt.
+  inventory:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Enter the MSVC environment
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          >>"%GITHUB_ENV%" echo VCVARS=%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+
+      - name: Inventory
+        shell: pwsh
+        run: |
+          "=== compilers and build tools ==="
+          cmake --version
+          ninja --version
+          python --version
+          cl 2>&1 | Select-Object -First 2
+          "=== MinGW availability ==="
+          foreach ($exe in @("gcc", "x86_64-w64-mingw32-gcc", "C:\msys64\mingw64\bin\gcc.exe", "C:\msys64\mingw64\bin\x86_64-w64-mingw32-gcc.exe", "C:\Strawberry\c\bin\gcc.exe")) {
+            $found = Get-Command $exe -ErrorAction SilentlyContinue
+            if ($found) { "FOUND $exe -> $($found.Source)" } else { "absent $exe" }
+          }
+          if (Test-Path "C:\msys64") { "C:\msys64 exists"; Get-ChildItem "C:\msys64" -Name } else { "C:\msys64 absent" }
+          "=== Windows SDK ==="
+          $kits = "C:\Program Files (x86)\Windows Kits\10"
+          if (Test-Path $kits) {
+            "Windows Kits root present"
+            Get-ChildItem "$kits\bin" -Name -ErrorAction SilentlyContinue | Select-Object -First 5
+            Get-ChildItem "$kits\bin" -Recurse -Filter d3dcompiler_47.dll -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName
+            Get-ChildItem "$kits\Lib" -Name -ErrorAction SilentlyContinue | Select-Object -First 5
+          } else { "no Windows Kits root" }
+          "=== dumpbin available? ==="
+          (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
+
+  # The configuration the shipped pipeline would use on Windows: the matrix
+  # entry asks for d3d12 + null, but Dawn forces the Win32 defaults on.
+  # Configure and build, then list what came out.
+  msvc-static:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Enter the MSVC environment
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+
+      - name: Configure (MSVC, Ninja, static)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/spike-static -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DDAWN_PACKER_LINKAGE=STATIC `
+            -DDAWN_EMIT_COVERAGE=OFF `
+            -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-static" `
+            -DDAWN_ENABLE_D3D12=ON `
+            -DDAWN_ENABLE_NULL=ON 2>&1 | Tee-Object -FilePath configure-static.log
+          "=== Dawn configure summary ==="
+          Select-String -Path configure-static.log -Pattern "Dawn (build|enable|use)" | ForEach-Object { $_.Line }
+
+      - name: Build and install
+        shell: pwsh
+        run: |
+          cmake --build build/spike-static --target dawn_packer 2>&1 | Tee-Object -FilePath build-static.log | Select-Object -Last 30
+          cmake --install build/spike-static --prefix "$PWD/dist/spike-static"
+
+      - name: List the install tree
+        shell: pwsh
+        run: |
+          "=== installed libraries ==="
+          Get-ChildItem dist/spike-static -Recurse -Include *.lib, *.dll, *.a, *.exp | Select-Object FullName, Length | Format-Table -AutoSize | Out-String
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-msvc-static
+          path: |
+            configure-static.log
+            build-static.log
+          if-no-files-found: warn
+
+  # Same thing for the shared linkage. The export-control block in the root
+  # CMakeLists.txt has an Apple and an ELF branch only, so this run records what
+  # MSVC does with the ELF version script.
+  msvc-shared:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Enter the MSVC environment
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_PATH=%%i
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+          >>"%GITHUB_ENV%" echo INCLUDE=%INCLUDE%
+          >>"%GITHUB_ENV%" echo LIB=%LIB%
+          >>"%GITHUB_ENV%" echo PATH=%PATH%
+
+      - name: Configure (MSVC, Ninja, shared)
+        shell: pwsh
+        run: |
+          cmake -S . -B build/spike-shared -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DDAWN_PACKER_LINKAGE=SHARED `
+            -DDAWN_EMIT_COVERAGE=OFF `
+            -DCMAKE_INSTALL_PREFIX="$PWD/dist/spike-shared" `
+            -DDAWN_ENABLE_D3D12=ON `
+            -DDAWN_ENABLE_NULL=ON 2>&1 | Tee-Object -FilePath configure-shared.log
+          "=== does the generated build hand the ELF version script to MSVC? ==="
+          Select-String -Path build/spike-shared/build.ninja -Pattern "version-script" | Select-Object -First 5 | ForEach-Object { $_.Line }
+
+      - name: Build and install
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          cmake --build build/spike-shared --target dawn_packer 2>&1 | Tee-Object -FilePath build-shared.log | Select-Object -Last 40
+          cmake --install build/spike-shared --prefix "$PWD/dist/spike-shared"
+
+      - name: What came out
+        if: always()
+        shell: pwsh
+        run: |
+          "=== build/spike-shared artefacts ==="
+          Get-ChildItem build/spike-shared -Recurse -Include *.dll, *.lib, *.exp -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize | Out-String
+          "=== install tree ==="
+          if (Test-Path dist/spike-shared) { Get-ChildItem dist/spike-shared -Recurse | Select-Object -ExpandProperty FullName } else { "nothing installed" }
+          "=== last errors from the build log ==="
+          if (Test-Path build-shared.log) { Select-String -Path build-shared.log -Pattern "error|Error" | Select-Object -Last 15 | ForEach-Object { $_.Line } }
+
+      - name: Consumption probe from the MinGW side
+        if: always()
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem dist/spike-shared -Recurse -Filter webgpu_dawn.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          $lib = Get-ChildItem dist/spike-shared -Recurse -Filter webgpu_dawn.lib -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dll -or -not $lib) {
+            "consumption probe skipped: dll=$($dll.FullName) lib=$($lib.FullName)"
+            exit 0
+          }
+          $dumpbin = (Get-Command dumpbin -ErrorAction SilentlyContinue).Source
+          "=== exported symbols of the DLL ==="
+          if ($dumpbin) {
+            $exports = & $dumpbin /exports $dll.FullName | Select-String -Pattern "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+\S+"
+            "export count: $($exports.Count)"
+            $nonApi = $exports | Where-Object { $_.Line -notmatch "_?(wgpu|dawn)" }
+            "exports outside wgpu/dawn: $($nonApi.Count)"
+            $nonApi | Select-Object -First 20 | ForEach-Object { $_.Line }
+          }
+          $mingw = "C:\msys64\mingw64\bin"
+          if (-not (Test-Path "$mingw\gcc.exe")) { "no MinGW gcc at $mingw"; exit 0 }
+          "=== linking a C consumer with MinGW gcc against the MSVC import library ==="
+          New-Item -ItemType Directory -Force -Path probe | Out-Null
+          & "$mingw\gcc.exe" -I dist/spike-shared/include -c scripts/smoke-test/link-test.c -o probe/link-test.o 2>&1
+          "compile exit: $LASTEXITCODE"
+          & "$mingw\gcc.exe" probe/link-test.o $lib.FullName -o probe/link-test.exe 2>&1
+          "link exit: $LASTEXITCODE"
+          Copy-Item $dll.FullName probe/ -Force
+          "=== running the probe ==="
+          & ./probe/link-test.exe
+          "run exit: $LASTEXITCODE"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-msvc-shared
+          path: |
+            configure-shared.log
+            build-shared.log
+          if-no-files-found: warn
