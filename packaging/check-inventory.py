@@ -12,9 +12,19 @@ import sys
 import tarfile
 
 
+def portable_path(path):
+    """Return a path with forward slashes, whatever the host or path flavour.
+
+    Tar members always use forward slashes, while the manifest and the staged
+    tree can be produced on Windows, where str(PureWindowsPath(...)) yields
+    backslashes. Normalizing every side keeps the three sets comparable.
+    """
+    return str(path).replace("\\", "/")
+
+
 def archive_members(archive):
     with tarfile.open(archive) as handle:
-        return {m.name for m in handle.getmembers() if m.isfile()}
+        return {portable_path(m.name) for m in handle.getmembers() if m.isfile()}
 
 
 def main(argv):
@@ -25,10 +35,10 @@ def main(argv):
     args = parser.parse_args(argv[1:])
 
     with open(args.manifest, encoding="utf-8") as handle:
-        manifest_paths = {a["path"] for a in json.load(handle)["artifacts"]}
+        manifest_paths = {portable_path(a["path"]) for a in json.load(handle)["artifacts"]}
     members = archive_members(args.archive)
     staged = {
-        str(path.relative_to(args.staged_dir))
+        portable_path(path.relative_to(args.staged_dir))
         for path in pathlib.Path(args.staged_dir).rglob("*")
         if path.is_file()
     } - {"manifest.json", ".dawn-packer-install"}

@@ -78,4 +78,21 @@ if python3 packaging/check-inventory.py "$work/good.tar.gz" "$stage/manifest.jso
   fail "a staged file absent from the manifest should be rejected"
 fi
 
+# The checker compares paths from tar (always forward slashes), the manifest and
+# the staged tree. It must normalize a Windows-flavored path the same way, or its
+# staged-file direction would misfire on Windows. Build a PureWindowsPath
+# explicitly so this fails on macOS/Linux too if the conversion regresses.
+python3 - <<'PY' || fail "checker paths must use forward slashes"
+import importlib.util
+import pathlib
+
+spec = importlib.util.spec_from_file_location("check_inventory", "packaging/check-inventory.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+windows = pathlib.PureWindowsPath("bin", "webgpu_dawn.dll")
+converted = module.portable_path(windows)
+if converted != "bin/webgpu_dawn.dll":
+    raise SystemExit(f"expected bin/webgpu_dawn.dll, got {converted!r}")
+PY
 pass "check-inventory"

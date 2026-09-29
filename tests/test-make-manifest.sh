@@ -72,4 +72,21 @@ grep -q '"id": "apple-clang"' "$work/manifest-prov.json" || fail "compiler.id mi
 grep -q '"version": "17.0.0"' "$work/manifest-prov.json" || fail "compiler.version missing from manifest"
 grep -q '"flags": \[' "$work/manifest-prov.json" || fail "flags missing from manifest"
 grep -q -- '-DDAWN_ENABLE_METAL=ON' "$work/manifest-prov.json" || fail "cmake flags missing from manifest"
+
+# Manifest paths are a portable, shipped contract: they must use forward slashes
+# whatever host produced them. Build a PureWindowsPath explicitly so this fails
+# on macOS/Linux too if the conversion regresses.
+python3 - <<'PY' || fail "manifest paths must use forward slashes"
+import importlib.util
+import pathlib
+
+spec = importlib.util.spec_from_file_location("make_manifest", "packaging/make-manifest.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+windows = pathlib.PureWindowsPath("include", "webgpu", "webgpu.h")
+converted = module.portable_path(windows)
+if converted != "include/webgpu/webgpu.h":
+    raise SystemExit(f"expected include/webgpu/webgpu.h, got {converted!r}")
+PY
 pass "make-manifest"

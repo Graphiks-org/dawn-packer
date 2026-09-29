@@ -8,6 +8,16 @@ import pathlib
 import sys
 
 
+def portable_path(path):
+    """Return a path with forward slashes, whatever the host or path flavour.
+
+    A manifest is a shipped, portable contract: str(PureWindowsPath(...)) yields
+    backslashes, which a consumer on any platform must never see and which would
+    not match the POSIX member names in the archive.
+    """
+    return str(path).replace("\\", "/")
+
+
 def sha256_of(path):
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -48,7 +58,7 @@ def main():
         relative = path.relative_to(install)
         if relative.parts[0] in excluded_top_level:
             continue
-        payload[str(relative)] = path
+        payload[portable_path(relative)] = path
     artifacts = []
     for relative, path in sorted(payload.items()):
         artifacts.append({"path": relative, "sha256": sha256_of(path), "size": path.stat().st_size})
