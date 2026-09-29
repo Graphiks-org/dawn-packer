@@ -1,9 +1,10 @@
 # Spike: an MSVC build of Dawn for the `mingwX64` target
 
-**Status: measurement in progress.** The results below are measured. The C-level
-consumption question is answered: MinGW links the MSVC import library and runs
-against the DLL. Still open are the Kotlin/Native project itself and whether the
-VC++ redistributable requirement can be removed; the verdict is not written yet.
+**Verdict: `feasible`.** Measured end to end: MSVC builds Dawn into a DLL plus
+its import library, and a real `mingwX64` Kotlin/Native cinterop project links
+that import library and runs against the DLL. Two constraints come with it: the
+Windows archives need the VC++ runtime, and the pipeline needs the changes listed
+at the end of this document.
 
 Context: the `mingwX64` target is `dropped` because building Dawn for it with
 MinGW-w64 is infeasible (see `docs/spikes/mingw-x64.md`). The documented fallback
@@ -172,14 +173,100 @@ Other gaps found by reading, all on the Windows path:
   `ALLOWED_BACKENDS` in `packaging/validate-matrix.py`, and from the backend
   mapping in `scripts/build-target.sh`.
 
-## Open questions
+### 5. The static CRT is a dead end
 
-1. Does a real `mingwX64` Kotlin/Native cinterop project link and run against the
-   MSVC import library? The C-level probe above passes, but the acceptance
-   criterion is the Kotlin/Native toolchain itself. The first attempt failed on
-   the probe rather than on the toolchain: `cinterop` never received the include
-   directory, because the `.def`'s `compilerOpts` did not reach the compiler
-   (`fatal error: 'webgpu/webgpu.h' file not found`, exit 1). Being retried with
-   the include path passed on the command line.
-2. Can the VC++ redistributable requirement be removed? See the static CRT probe
-   above.
+Setting `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` to drop the VC++ runtime
+dependency fails at link:
+
+```
+time_zone_libc.cc.obj : error LNK2019: unresolved external symbol __imp__mktime64
+  referenced in function ... absl::time_internal::cctz::TimeZoneLibC::MakeTime...
+dawn\webgpu_dawn.dll : fatal error LNK1120: 4 unresolved externals
+```
+
+Abseil's cctz expects `mktime64` through the UCRT import library, which the
+static CRT does not provide. Working around it means patching Abseil, which is the
+same kind of out-of-scope patch that rules out the MinGW route. The DLL therefore
+keeps its `MSVCP140`/`VCRUNTIME140` dependency; see the distribution note in the
+verdict.
+
+### 6. A real `mingwX64` Kotlin/Native consumer
+
+The acceptance criterion: a Kotlin/Native project whose bindings come from
+`webgpu.h`, linked against the MSVC import library and executed.
+
+```
+headers = webgpu/webgpu.h
+package = webgpu
+compilerOpts = -I<install>/include
+linkerOpts = <install>/lib/webgpu_dawn.lib
+```
+
+```
+cinterop -def webgpu.def -o webgpu -target mingw_x64 -compiler-option -I<install>/include
+  -> webgpu.klib                                    (cinterop exit: 0)
+kotlinc-native main.kt -library <path>/webgpu.klib -target mingw_x64 -o app \
+  -linker-option <install>/lib/webgpu_dawn.lib
+  -> app.exe                                        (kotlinc-native exit: 0)
+./app.exe
+  -> kotlin/native mingwX64 webgpu smoke test OK    (run exit: 0)
+```
+
+Three details cost a round each and are worth recording, because they are probe
+requirements rather than toolchain limits:
+
+* `cinterop` needs the include directory passed on the command line
+  (`-compiler-option -I...`) as well as in the `.def`; with only the `.def`'s
+  `compilerOpts` it fails with `fatal error: 'webgpu/webgpu.h' file not found`;
+* `-library` takes a **path**, not a name (`-library <path>/webgpu.klib`); `-repo`
+  does not exist in Kotlin/Native 2.4.20, and a klib passed as a positional input
+  is rejected with `source entry is not a Kotlin file`;
+* consuming cinterop declarations requires
+  `@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)`.
+
+## Verdict
+
+`feasible`, for the `d3d12` + `null` entry the matrix declares. Unlike the MinGW
+route, nothing needs patching: Dawn builds under MSVC as it is, and the C API
+boundary makes the MSVC-built DLL usable from a GNU-ABI consumer. The consumer
+triple stays `x86_64-pc-windows-gnu`.
+
+The route is:
+
+* a `windows-2022` runner, MSVC entered through `vcvars64.bat`, CMake with Ninja
+  and no toolchain file (host == target, so `protoc` builds natively and the
+  matrix entry's `toolchain` becomes empty);
+* `DAWN_BUILD_MONOLITHIC_LIBRARY=SHARED` yielding `bin/webgpu_dawn.dll` and
+  `lib/webgpu_dawn.lib`;
+* export control left to `__declspec(dllexport)`: 387 exported symbols, none
+  outside `wgpu*`/`dawn*`.
+
+Constraints accepted or to be decided:
+
+* the archives also carry D3D11 and Vulkan, because Dawn forces the Win32
+  defaults on; this is accepted;
+* the DLL needs the VC++ runtime DLLs. Either document the requirement or deploy
+  them app-local next to `webgpu_dawn.dll`, which the redistributable licence
+  allows.
+
+## What the pipeline needs before this can ship
+
+* `CMakeLists.txt`: guard the ELF version script with `WIN32`. MSVC ignores the
+  option silently today, but a GNU linker on Windows would try to honour it.
+* `scripts/package.sh`: stage `bin/` as well as `include/` and `lib/`, otherwise
+  the DLL is dropped **silently** (reproduced).
+* `packaging/make-manifest.py`: cover `bin/*.dll`. The manifest claims an
+  inventory exhaustive over what `package.sh` stages, and today it would miss the
+  DLL without failing.
+* `scripts/build-target.sh`: the Windows path needs no toolchain file, and its
+  compiler setup comes from the MSVC environment rather than from the script.
+* `.github/workflows/build.yml`: derive a Windows host target; today the
+  `uname -s`-based derivation errors out on anything but Darwin/Linux.
+* `scripts/run-smoke-test.sh`: a Windows branch linking with MinGW gcc, the MSVC
+  import library, and the DLL beside the executable.
+* `packaging/validate-matrix.py` and `scripts/build-target.sh`: `d3d11` is missing
+  from the backend vocabulary, which the honest Windows backend list needs.
+* `targets/matrix.json`: move `mingwX64` from `dropped` to `v1` with an empty
+  `toolchain` and the real backend set.
+* `cmake/toolchains/mingw-x64.cmake`: becomes the record of the abandoned GNU
+  route.
