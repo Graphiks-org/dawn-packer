@@ -27,6 +27,14 @@ trap 'rm -rf "$stage"' EXIT
 cp -R "$install_dir/include" "$stage/include"
 cp -R "$install_dir/lib" "$stage/lib"
 
+# Finding 4: build-target.sh drops provenance next to the install tree. Pass it
+# through when present; make-manifest.py keeps its legacy output otherwise.
+provenance="$(dirname "$install_dir")/packer-provenance.json"
+provenance_args=()
+if [ -f "$provenance" ]; then
+  provenance_args=(--provenance "$provenance")
+fi
+
 python3 packaging/make-manifest.py \
   --install-dir "$stage" \
   --kotlin-target "$target" \
@@ -34,6 +42,7 @@ python3 packaging/make-manifest.py \
   --dawn-tag "$dawn_tag" \
   --dawn-revision "$dawn_revision" \
   --linkage "$linkage" \
+  ${provenance_args[@]+"${provenance_args[@]}"} \
   --out "$stage/manifest.json" >/dev/null
 
 python3 packaging/validate-manifest.py "$stage/manifest.json" >/dev/null

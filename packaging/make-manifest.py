@@ -36,20 +36,50 @@ def main():
     parser.add_argument("--dawn-revision", required=True)
     parser.add_argument("--linkage", required=True, choices=["static", "shared"])
     parser.add_argument("--packer-version", default="0.1.0")
+    parser.add_argument(
+        "--provenance",
+        help="optional JSON file with compiler/cmake provenance (see scripts/build-target.sh)",
+    )
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
     install = pathlib.Path(args.install_dir).resolve()
     entry = json.loads(args.entry_json)
 
-    # Headers travel with every archive; libraries are the linkage-specific payload.
-    payload = collect(install, install, ["include/**/*.h", "lib/*.a", "lib/*.so*", "lib/*.dylib", "lib/*.dll", "lib/*.lib"])
+    # Headers travel with every archive; libraries are the linkage-specific
+    # payload. The inventory must be exhaustive over what scripts/package.sh
+    # stages: every file under include/ (the install tree also emits .ixx) and
+    # every file under lib/ (the monolithic library plus Dawn's CMake package
+    # files under lib/cmake/).
+    payload = collect(install, install, [
+        "include/**/*.h",
+        "include/**/*.ixx",
+        "lib/*.a",
+        "lib/*.so*",
+        "lib/*.dylib",
+        "lib/*.dll",
+        "lib/*.lib",
+        "lib/cmake/**",
+    ])
     artifacts = []
     for relative, path in sorted(payload.items()):
         artifacts.append({"path": relative, "sha256": sha256_of(path), "size": path.stat().st_size})
     if not artifacts:
         print("ERROR: no headers or libraries found in install dir", file=sys.stderr)
         return 1
+
+    # Spec §5.3 promises compiler id/version and the cmake flags. Fall back to the
+    # historical empty objects when no provenance file is supplied.
+    compiler = {}
+    cmake = {"buildType": "Release"}
+    if args.provenance:
+        with open(args.provenance, encoding="utf-8") as handle:
+            provenance = json.load(handle)
+        if isinstance(provenance.get("compiler"), dict):
+            compiler = provenance["compiler"]
+        if isinstance(provenance.get("cmake"), dict):
+            cmake = provenance["cmake"]
+        cmake.setdefault("buildType", "Release")
 
     manifest = {
         "schemaVersion": 1,
@@ -63,8 +93,8 @@ def main():
         },
         "linkage": args.linkage,
         "backends": entry["backends"],
-        "compiler": {},
-        "cmake": {"buildType": "Release"},
+        "compiler": compiler,
+        "cmake": cmake,
         "artifacts": artifacts,
         "createdAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
