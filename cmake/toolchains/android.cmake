@@ -29,9 +29,12 @@ if (NOT EXISTS "${CMAKE_ANDROID_NDK}")
   message(FATAL_ERROR "CMAKE_ANDROID_NDK='${CMAKE_ANDROID_NDK}' does not exist")
 endif()
 
-# Static libc++ so the single produced library is self-contained. This matches
-# Kotlin/Native's Android target, whose linker flags are
-# `-lc++_static -lc++abi` against its own bundled libc++.
+# STL selection only affects the target compile flags. For a static archive no
+# STL runtime is linked in, so this does NOT make the shipped archive
+# self-contained; the consumer chooses the runtime at final link. The value is
+# kept at c++_static to match Kotlin/Native's Android flag set
+# (`-lc++_static -lc++abi` in konan.properties) and CMake's Android default, but
+# the consumer-side libc++ version is an open risk (docs/spikes/android.md).
 #
 # NOTE: the correct CMake variable is CMAKE_ANDROID_STL_TYPE (CMake's built-in
 # Android support); the older `CMAKE_ANDROID_STL`/`ANDROID_STL` spelling used by

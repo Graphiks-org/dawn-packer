@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    { "kotlinTarget": "androidNativeArm64", "triple": "aarch64-linux-android", "os": "android", "arch": "arm64", "runner": "ubuntu-24.04", "toolchain": "cmake/toolchains/android.cmake", "androidAbi": "arm64", "backends": ["null"], "status": "v1" }
+  ]
+}

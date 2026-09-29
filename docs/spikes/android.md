@@ -1,14 +1,16 @@
 # Spike: Android (`androidNativeArm64`, `androidNativeArm32`, `androidNativeX64`, `androidNativeX86`)
 
-**Verdict: `feasible`** for all four ABIs. `bash scripts/build-target.sh <target> static`
-configures and builds Dawn's Vulkan + OpenGL ES + null backends against NDK
-**27.3.13750724** and installs a valid Android static archive for each ABI. There is
-no build-side blocker.
+**Verdict: `feasible` at the build level** for all four ABIs.
+`bash scripts/build-target.sh <target> static` configures and builds Dawn's
+Vulkan + OpenGL ES + null backends against NDK **27.3.13750724** and installs a
+valid Android static archive for each ABI. There is no build-side blocker.
 
-There is one **consumer-side constraint** (see "Consumer constraint" below): the
-pinned NDK must also be the source of the app's `libc++_shared.so`, because
-Kotlin/Native 2.4.20's bundled C++ runtime predates symbols that Dawn built with
-NDK 27 references.
+**Consumability is not established.** There is an **unresolved consumer-side
+risk** (see "Open risk: consumer C++ runtime" below): Dawn built with NDK 27
+references C++ runtime symbols that are absent from the r19c-era libc++ that
+Kotlin/Native 2.4.20 bundles and *always* links. The matrix entries below stay
+`v1` on build-side evidence only; an end-to-end Kotlin/Native link + on-device
+run has **not** been performed.
 
 ## Environment
 
@@ -59,6 +61,12 @@ Two corrections to the brief's snippet, both applied and required:
   and is a silent no-op here.
 * `CMAKE_SYSTEM_VERSION` and `CMAKE_ANDROID_API` must agree; both are `26`.
 
+`CMAKE_ANDROID_STL_TYPE c++_static` is kept to match Kotlin/Native's Android
+flag set and CMake's Android default. Note it only affects the target **compile**
+flags: no STL runtime is linked into a static archive, so the shipped archive is
+**not** self-contained — the consumer chooses the runtime at final link (see
+"Open risk: consumer C++ runtime").
+
 `android-26` matches Dawn's own upstream CI
 (`dawn/.github/workflows/ci.yml`: `-DANDROID_PLATFORM=android-26`) and is present
 in Kotlin/Native's bundled sysroot (see below).
@@ -82,13 +90,16 @@ So the NDK Kotlin/Native 2.4.20 effectively compiles/links with is the
 Dawn build. This spike pins the build NDK to **27.3.13750724** and records the
 compatibility consequence below.
 
-### Consumer constraint (explicit)
+### Open risk: consumer C++ runtime (unresolved)
 
-The Dawn archive is compiled with **NDK 27.3.13750724**. Kotlin/Native's bundled
-`libc++_static.a` is r19c-era and does **not** define several C++ runtime symbols
-that Dawn references. Verified against `libwebgpu_dawn.a` (arm64):
+The Dawn archive is compiled with **NDK 27.3.13750724**. Kotlin/Native 2.4.20
+**always** links its bundled **r19c-era static libc++**
+(`linkerKonanFlags.android_arm64 = -lm -lc++_static -lc++abi -landroid -llog
+-latomic` in `konan.properties`), and there is no documented switch to stop it.
+Dawn references C++ runtime symbols that the bundled r19c libc++ does **not**
+define (verified with `llvm-nm` against `libwebgpu_dawn.a`, arm64):
 
-| Symbol (mangled, `std::__ndk1`) | Kotlin bundled `libc++_static.a` | NDK 27 `libc++_shared.so` |
+| Symbol (mangled, `std::__ndk1`) | Kotlin bundled r19c `libc++_static.a` | NDK 27 `libc++_shared.so` |
 | --- | --- | --- |
 | `__libcpp_verbose_abort(char const*, ...)` | missing | present |
 | `__libcpp_atomic_wait(void const volatile*, int)` | missing | present |
@@ -98,20 +109,34 @@ that Dawn references. Verified against `libwebgpu_dawn.a` (arm64):
 | `basic_stringbuf<...>::operator=(basic_stringbuf&&)` | missing | present |
 | `__fs::filesystem::path::__filename() const` | missing | present |
 
-Because a shared library may carry undefined symbols, a Kotlin/Native
-`android_arm64` link of the archive **succeeds**, but those symbols stay
-undefined against Kotlin's bundled libc++. They must be resolved at runtime by a
-`libc++_shared.so` that contains them. NDK 27's `libc++_shared.so` does, and it
-uses the same SONAME (`libc++_shared.so`) as Kotlin's r19c copy — so the two are
-interchangeable by name and it is easy to pick the wrong one. A Kotlin/Native
-link that adds NDK 27's `libc++_shared.so` records the dependency correctly
-(`NEEDED libc++_shared.so`).
+**This is a risk, not a solved constraint.** A shared library may carry undefined
+symbols, so a Kotlin/Native `android_arm64` link of the archive *succeeds* while
+leaving those symbols undefined against the bundled libc++ — the failure appears
+on device at load time, not at build time. Simply making NDK 27's
+`libc++_shared.so` available does **not** replace the r19c static runtime that
+Kotlin/Native also links: the app would carry two libc++ implementations sharing
+the `std::__ndk1` namespace. A test link that added NDK 27's `libc++_shared.so`
+recorded `NEEDED libc++_shared.so` but the references still showed as undefined
+against the bundled static runtime. "Ship the `.so`" therefore conflates *linking*
+it with *packaging* it into `jniLibs`, and neither variant has been proven.
 
-**Rule for consumers: build Dawn with NDK 27.3.13750724 *and* ship the same
-NDK's `libc++_shared.so` with the app.** Do not rely on the `libc++` bundled in
-the Kotlin/Native toolchain; with it, Dawn's `.so` fails to load with unresolved
-`std::__ndk1` symbols. A full end-to-end KMP consumer link/run is still the
-authoritative check and was not part of this spike.
+Two candidate mechanisms. **Both are unverified**, and each must be proven by an
+end-to-end KMP cinterop link **plus an on-device run** before any `androidNative*`
+target is declared consumable:
+
+1. **Remediate at the consumer link.** Have the consumer link NDK 27's
+   `libc++_shared.so` explicitly — e.g. `linkerOpts` requesting `-lc++_shared`
+   with the ordering / `-Wl,--no-as-needed` needed to keep it — and package
+   `libc++_shared.so` taken from NDK 27 into `jniLibs/<abi>/`. The r19c static
+   libc++ that Kotlin/Native also links must be accounted for
+   (`pickFirst` / symbol precedence), and the consumer must show that the NDK 27
+   implementation is the one resolving `std::__ndk1`.
+2. **Remediate at the Dawn build.** Rebuild Dawn against an NDK whose libc++ is
+   the same vintage as Kotlin/Native's bundled one (r19c). Record that Dawn's
+   sources/CMake may not build against r19c and that no such NDK is installed on
+   this machine; this is the fallback if mechanism 1 cannot be made to work.
+
+The Dawn build pin remains **NDK 27.3.13750724**.
 
 ## Commands and results
 
@@ -180,16 +205,15 @@ cmake -S ... -B .../build/androidNativeArm64/static -G Ninja ... \
 `dist/` was kept for all four successful targets; the disposable build trees were
 removed.
 
-## Caveats / re-spike conditions
+## Open risk / follow-up
 
-* The **consumer constraint above is the main risk**. The build-side verdict is
-  clean, but ship-readiness depends on the consuming app linking the pinned NDK's
-  `libc++_shared.so`. If a future Kotlin/Native release updates its bundled
-  Android toolchain (or if the consumer link is validated against the pinned
-  NDK), this note can be retired.
+* **No end-to-end Kotlin/Native link test has been performed for the Android
+  targets.** All four ABIs are validated at the **build** level only. The
+  consumer C++ runtime risk above is unresolved; until a KMP cinterop link **and
+  an on-device run** succeed via mechanism 1 or 2, these targets are
+  build-feasible but **not** proven consumable.
+* The risk may be retired if a future Kotlin/Native release updates its bundled
+  Android toolchain, or once mechanism 1 or 2 is proven against the pinned NDK.
 * `ANDROID_NDK_HOME` is misconfigured on this machine (points at an uninstalled
   revision). Builds here override it explicitly; CI must set it to
   `27.3.13750724`.
-* All four ABIs were validated at the **build** level only. A Kotlin/Native
-  cinterop link/run smoke test is the next step to confirm the runtime constraint
-  in practice.

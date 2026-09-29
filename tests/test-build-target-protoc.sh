@@ -22,6 +22,15 @@ if printf '%s\n' "$native" | grep -q -- '-DPROTOC_EXECUTABLE='; then
   fail "native target must not receive -DPROTOC_EXECUTABLE"
 fi
 
+# Ruling P14: Android targets forward their matrix entry's ABI as
+# -DCMAKE_ANDROID_ARCH_ABI; native targets must not.
+android="$(DAWN_PACKER_DRY_RUN=1 bash scripts/build-target.sh androidNativeArm64 static)"
+printf '%s\n' "$android" | grep -q -- '-DCMAKE_ANDROID_ARCH_ABI=arm64-v8a' \
+  || fail "android target missing -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a"
+if printf '%s\n' "$native" | grep -q -- '-DCMAKE_ANDROID_ARCH_ABI'; then
+  fail "native target must not receive -DCMAKE_ANDROID_ARCH_ABI"
+fi
+
 # The host protoc builder is idempotent and prints an executable path.
 path="$(bash scripts/build-host-protoc.sh --print-path)"
 [ -x "$path" ] || fail "host protoc not executable: $path"

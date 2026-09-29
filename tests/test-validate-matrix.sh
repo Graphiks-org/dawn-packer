@@ -8,5 +8,13 @@ python3 "$root/packaging/validate-matrix.py" "$root/targets/matrix.json" >/dev/n
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad.json" >/dev/null 2>&1; then
   fail "bad matrix should be rejected"
 fi
+# Ruling P14: android entries must name a valid NDK ABI...
+if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-android-abi.json" >/dev/null 2>&1; then
+  fail "wrong androidAbi should be rejected"
+fi
+# ...and non-android entries must not carry one.
+if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-extra-android-abi.json" >/dev/null 2>&1; then
+  fail "androidAbi on a non-android entry should be rejected"
+fi
 python3 "$root/scripts/matrix.py" get linuxX64 | grep -q '"triple": "x86_64-unknown-linux-gnu"' || fail "matrix.py get failed"
 pass "validate-matrix"

@@ -7,6 +7,9 @@ REQUIRED = {"kotlinTarget", "triple", "os", "arch", "runner", "toolchain", "back
 ALLOWED_OS = {"linux", "macos", "ios", "tvos", "watchos", "windows", "android"}
 ALLOWED_BACKENDS = {"metal", "vulkan", "d3d12", "gles", "desktop_gl", "null"}
 ALLOWED_STATUS = {"v1", "spike", "dropped"}
+# Ruling P14: each Android target names exactly one NDK ABI, forwarded by
+# scripts/build-target.sh as -DCMAKE_ANDROID_ARCH_ABI.
+ALLOWED_ANDROID_ABI = {"arm64-v8a", "armeabi-v7a", "x86_64", "x86"}
 
 
 def errors(data):
@@ -30,6 +33,16 @@ def errors(data):
         seen.add(name)
         if entry["os"] not in ALLOWED_OS:
             problems.append(f"{where}: bad os {entry['os']}")
+        if entry["os"] == "android":
+            if "androidAbi" not in entry:
+                problems.append(f"{where}: android entries must set androidAbi")
+            elif entry["androidAbi"] not in ALLOWED_ANDROID_ABI:
+                problems.append(
+                    f"{where}: bad androidAbi {entry['androidAbi']} "
+                    f"(allowed: {sorted(ALLOWED_ANDROID_ABI)})"
+                )
+        elif "androidAbi" in entry:
+            problems.append(f"{where}: androidAbi is only allowed for os=android")
         if entry["status"] not in ALLOWED_STATUS:
             problems.append(f"{where}: bad status {entry['status']}")
         if not entry["backends"]:
