@@ -30,8 +30,6 @@ done
 
 build_dir="$root/build/$target/$linkage_lc"
 install_dir="$root/dist/$target/$linkage_lc/install"
-rm -rf "$build_dir" "$install_dir"
-mkdir -p "$build_dir" "$install_dir"
 
 cmake_args=(
   -S "$root" -B "$build_dir" -G Ninja
@@ -42,7 +40,20 @@ cmake_args=(
 )
 if [ -n "$toolchain" ]; then
   cmake_args+=("-DCMAKE_TOOLCHAIN_FILE=$root/$toolchain")
+  # Dawn's protobuf.cmake hard-fails when cross-compiling unless a host protoc
+  # is supplied. Only cross builds (non-empty toolchain) need it; native targets
+  # must not receive the flag.
+  protoc_path="$(bash scripts/build-host-protoc.sh | tail -n1)"
+  cmake_args+=("-DPROTOC_EXECUTABLE=$protoc_path")
 fi
+
+if [ "${DAWN_PACKER_DRY_RUN:-0}" = "1" ]; then
+  printf 'cmake'; printf ' %q' "${cmake_args[@]}" "${backend_flags[@]}"; printf '\n'
+  exit 0
+fi
+
+rm -rf "$build_dir" "$install_dir"
+mkdir -p "$build_dir" "$install_dir"
 cmake "${cmake_args[@]}" "${backend_flags[@]}"
 cmake --build "$build_dir" --target dawn_packer
 cmake --install "$build_dir" --prefix "$install_dir"
