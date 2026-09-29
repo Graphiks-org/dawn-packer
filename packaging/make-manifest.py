@@ -51,6 +51,10 @@ def main():
     # stages: every file under include/ (the install tree also emits .ixx) and
     # every file under lib/ (the monolithic library plus Dawn's CMake package
     # files under lib/cmake/).
+    # `lib/cmake/**/*` and not `lib/cmake/**`: a trailing `**` only recurses
+    # from Python 3.13 on, and a bare `**` degrades to a single-segment match
+    # on 3.12 (the ubuntu runners' interpreter), which silently dropped every
+    # CMake package file from the manifest.
     payload = collect(install, install, [
         "include/**/*.h",
         "include/**/*.ixx",
@@ -59,7 +63,7 @@ def main():
         "lib/*.dylib",
         "lib/*.dll",
         "lib/*.lib",
-        "lib/cmake/**",
+        "lib/cmake/**/*",
     ])
     artifacts = []
     for relative, path in sorted(payload.items()):

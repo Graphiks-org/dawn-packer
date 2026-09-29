@@ -13,6 +13,13 @@ set(DAWN_FETCH_DEPENDENCIES ON CACHE BOOL "" FORCE)
 set(DAWN_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
 set(DAWN_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(DAWN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+# GLFW is reached only through Dawn's samples, its tests and the optional
+# dawn_glfw utility, all of which are off or unused here: the WebGPU C API
+# surface we ship does not touch it. Leaving it on configures glfw3 for nothing,
+# and on Linux GLFW then demands wayland-scanner (DAWN_USE_WAYLAND defaults to
+# ON), which fails the configure step on a runner without Wayland headers.
+# Upstream Dawn's own CI builds the monolithic library with DAWN_USE_GLFW OFF.
+set(DAWN_USE_GLFW OFF CACHE BOOL "" FORCE)
 set(DAWN_BUILD_MONOLITHIC_LIBRARY "${DAWN_PACKER_LINKAGE}" CACHE STRING "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
