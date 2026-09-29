@@ -10,6 +10,7 @@ import re
 import sys
 
 CMAKE_CXX_COMPILER_VERSION = "CMAKE_CXX_COMPILER_VERSION"
+CMAKE_CXX_FLAGS = "CMAKE_CXX_FLAGS"
 
 
 def compiler_id(version_line, compiler_name):
@@ -26,12 +27,27 @@ def compiler_id(version_line, compiler_name):
     return compiler_name or "unknown"
 
 
+def _numeric_version(text):
+    match = re.search(r"\d+(?:\.\d+)+", text)
+    return match.group(0) if match else ""
+
+
 def compiler_version(version_line, cache_version=""):
-    # `cl` rejects `--version`, so MSVC leaves the line empty; fall back to the
-    # version CMake recorded in its cache rather than shipping no version at all.
-    source = version_line.strip() or cache_version.strip()
-    match = re.search(r"\d+(?:\.\d+)+", source)
-    return match.group(0) if match else source
+    # `cl` writes its banner to stderr and rejects `--version`, so the line can
+    # be empty or carry no number at all. Fall back to the cache whenever no
+    # number was extracted, not only when the line is empty, rather than ship a
+    # version that is really the banner text.
+    line = version_line.strip()
+    cached = cache_version.strip()
+    return _numeric_version(line) or _numeric_version(cached) or cached or line
+
+
+def compiler_flags(cxx_flags, cache_flags=""):
+    # MSYS rewrites `/DWIN32` in argv into `C:/Program Files/Git/DWIN32`, so the
+    # cache is the only trustworthy source when present; `--cxx-flags` stays the
+    # fallback for a caller that has no cache.
+    source = cache_flags.strip() or cxx_flags.strip()
+    return [token for token in re.split(r"\s+", source) if token]
 
 
 def cmake_cache_value(cache_path, key):
@@ -58,11 +74,12 @@ def main(argv):
     args = parser.parse_args(argv[1:])
 
     cache_version = cmake_cache_value(args.cmake_cache, CMAKE_CXX_COMPILER_VERSION)
+    cache_flags = cmake_cache_value(args.cmake_cache, CMAKE_CXX_FLAGS)
     provenance = {
         "compiler": {
             "id": compiler_id(args.version_line, args.compiler_name),
             "version": compiler_version(args.version_line, cache_version),
-            "flags": [token for token in re.split(r"\s+", args.cxx_flags.strip()) if token],
+            "flags": compiler_flags(args.cxx_flags, cache_flags),
         },
         "cmake": {"buildType": "Release", "flags": list(args.cmake_flags)},
     }

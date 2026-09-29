@@ -101,7 +101,10 @@ compiler_path="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "$cmake_cache" | head 
 compiler_flags="$(sed -n 's/^CMAKE_CXX_FLAGS:[^=]*=//p' "$cmake_cache" | head -n1)"
 compiler_version=""
 if [ -n "$compiler_path" ] && [ -x "$compiler_path" ]; then
-  compiler_version="$("$compiler_path" --version 2>/dev/null | head -n1 || true)"
+  # MSVC's `cl` rejects `--version` and writes its version banner to stderr, so
+  # capture both streams; the module falls back to the CMake cache version when
+  # the banner (or the empty result) carries no version number.
+  compiler_version="$("$compiler_path" --version 2>&1 | head -n1 || true)"
 fi
 # The literal `--` ends argparse option parsing: every cmake flag starts with
 # `-D`, which argparse would otherwise try to read as an option. `--cmake-cache`

@@ -50,7 +50,8 @@ import json, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert data["compiler"]["id"] == "msvc", data
 assert data["compiler"]["version"] == "19.44.35229.0", data
-assert data["compiler"]["flags"] == ["/O2"], data
+# The cache is the trusted source for flags, so `--cxx-flags` " /O2 " loses.
+assert data["compiler"]["flags"] == ["/DWIN32", "/D_WINDOWS", "/O2"], data
 assert data["cmake"]["flags"] == ["-DDAWN_PACKER_LINKAGE=SHARED"], data
 print("ok")
 PY
@@ -64,6 +65,37 @@ import json, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert data["compiler"]["id"] == "gcc", data
 assert data["compiler"]["version"] == "13.3.0", data
+print("ok")
+PY
+
+# MSYS rewrites `/DWIN32` in argv into `C:/Program Files/Git/DWIN32`, so the
+# passed `--cxx-flags` cannot be trusted; the cache holds the true string and
+# must win whenever it is available.
+python3 packaging/provenance.py \
+  --compiler-name "cl.exe" \
+  --version-line "Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35229.0 for x64" \
+  --cmake-cache "$work/CMakeCache.txt" \
+  --cxx-flags "C:/Program Files/Git/DWIN32 /D_WINDOWS /O2" \
+  --out "$work/mangled.json" -- >/dev/null
+python3 - "$work/mangled.json" <<'PY' || fail "flags must come from the cache"
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert data["compiler"]["flags"] == ["/DWIN32", "/D_WINDOWS", "/O2"], data
+print("ok")
+PY
+
+# A version line that is present but carries no number (MSVC writes a banner
+# without a version to stderr) must still fall back to the cache version.
+python3 packaging/provenance.py \
+  --compiler-name "cl.exe" \
+  --version-line "Microsoft (R) C/C++ Optimizing Compiler for x64" \
+  --cmake-cache "$work/CMakeCache.txt" \
+  --out "$work/no-number.json" -- >/dev/null
+python3 - "$work/no-number.json" <<'PY' || fail "version must fall back to the cache"
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert data["compiler"]["id"] == "msvc", data
+assert data["compiler"]["version"] == "19.44.35229.0", data
 print("ok")
 PY
 
