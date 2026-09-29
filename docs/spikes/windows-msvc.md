@@ -77,22 +77,40 @@ on every non-Apple platform. Generated link flags for the shared build:
 LINK_FLAGS = /machine:x64 /INCREMENTAL:NO  -Wl,--version-script=.../webgpu_dawn_exports.map
 ```
 
-So the ELF-only option *is* handed to MSVC's linker. The DLL links anyway, and the
-resulting export table is exactly what the public-API promise requires:
+So the ELF-only option *is* handed to MSVC's linker. The DLL links anyway. An
+early check reported "387 symbols, 0 outside wgpu/dawn", but that was a false
+negative in the measuring filter: it tested whether the whole line matched
+`_?(wgpu|dawn)`, and MSVC-mangled Dawn names contain the substring `dawn`, so all
+of them passed. `llvm-readobj --coff-exports` on the real DLL gives the true
+breakdown:
 
 ```
 export count: 387
-exports outside wgpu/dawn: 0
+  public C API (wgpu*/dawn*, undecorated): 276
+  MSVC-mangled Dawn native C++:            111
+  third-party (absl, tint, spirv, protobuf, __cxa, std): 0
 ```
 
-`__declspec(dllexport)`, which Dawn's headers already use, restricts the export
-table on its own: no leak, and no export option was needed. Two consequences:
+The 276 C API symbols are the same set the Linux shared library exports. The 111
+extra symbols are Dawn's native C++ API, and they are deliberate upstream:
+`dawn/src/dawn/native/CMakeLists.txt:1049-1055` defines
+`DAWN_NATIVE_SHARED_LIBRARY` and `DAWN_NATIVE_IMPLEMENTATION` for the monolithic
+shared build, which makes `DAWN_NATIVE_EXPORT` expand to
+`__declspec(dllexport)` (`dawn/include/dawn/native/dawn_native_export.h:34`).
+Suppressing them would need a Dawn patch, which this project rejects on
+principle. Nothing from a third-party library leaks, because MSVC exports only
+what is explicitly marked.
+
+Two consequences:
 
 * the version script is dead weight on Windows and should be guarded by a `WIN32`
   branch, because a GNU-side Windows linker would try to honour it (a version
   script is an ELF concept, and the target is PE);
-* on Linux the same guarantee needed an explicit version script (276 symbols,
-  0 leaks, measured in CI); on Windows it comes for free.
+* on Linux the version script is what keeps the dynamic symbol table to the C API,
+  since ELF would otherwise export everything, third-party objects included (276
+  symbols, 0 leaks, measured in CI); on Windows the C++ API is exported
+  deliberately and third-party symbols never leak, because MSVC requires an
+  explicit `dllexport`.
 
 Whether `link.exe` reports `LNK4044` (unrecognised option) for the flag: it does
 not. A grep of the build log for `LNK4044`, `unrecognized option` and
@@ -286,8 +304,9 @@ The route is:
   `lib/webgpu_dawn.lib`. The static linkage is deliberately not shipped: it links
   from MinGW, but only with MSVC and Windows SDK import libraries that no archive
   can carry (section 7);
-* export control left to `__declspec(dllexport)`: 387 exported symbols, none
-  outside `wgpu*`/`dawn*`.
+* export control left to `__declspec(dllexport)`: 387 exported symbols, the 276
+  public C API entries plus 111 MSVC-mangled Dawn native C++ entries, and no
+  third-party symbol.
 
 Constraints accepted or to be decided:
 

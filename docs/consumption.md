@@ -202,7 +202,9 @@ application, not merely linked at build time:
   backends) and consumed through its import library; the consumer triple stays
   `x86_64-pc-windows-gnu`. The shared archive carries `webgpu_dawn.dll` and the
   MSVC runtime DLLs it needs, so copying `bin/` next to the executable is the
-  whole deployment. No redistributable or system package is required.
+  whole deployment. No redistributable or system package is required. The DLL
+  also exports Dawn's native C++ API as MSVC-mangled names, which does not affect
+  a C consumer.
 - The headers / the manifest are common to both linkages; only the
   library changes. Check the Dawn revision actually built in
   `manifest.json` before debugging unexpected behavior.

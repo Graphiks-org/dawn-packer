@@ -257,9 +257,15 @@ jobs:
           count="$(printf '%s\n' "$defined" | grep -Ec '^_?(wgpu|dawn)' || true)"
           echo "shared symbol check OK: $count wgpu/dawn symbols, 0 leaks"
 
-      # The Windows equivalent of the ELF version script check: dllexport is
-      # expected to restrict the table on its own, and this proves it on every
-      # build instead of trusting the measurement once.
+      # The Windows equivalent of the ELF version script check, against a
+      # different invariant: MSVC only exports what is explicitly marked, so the
+      # risk is a third-party symbol leaking rather than the C API being
+      # over-exported. Dawn's monolithic shared build defines
+      # DAWN_NATIVE_SHARED_LIBRARY and DAWN_NATIVE_IMPLEMENTATION
+      # (src/dawn/native/CMakeLists.txt:1049-1055), which makes DAWN_NATIVE_EXPORT
+      # expand to __declspec(dllexport) (include/dawn/native/dawn_native_export.h),
+      # so Dawn's native C++ API is exported on purpose: the MSVC-mangled
+      # (`?`-prefixed) Dawn symbols are expected, third-party symbols are the leak.
       - name: Shared symbol check (Windows)
         if: runner.os == 'Windows' && matrix.linkage == 'shared'
         shell: bash
@@ -279,14 +285,29 @@ jobs:
           [ -n "$dll" ] || { echo "::error::webgpu_dawn.dll missing from ${archives[0]}"; exit 1; }
           exports="$(dumpbin //exports "$dll" | awk '/^ +[0-9]+ +[0-9A-F]+ +[0-9A-F]+ +/ {print $4}')"
           [ -n "$exports" ] || { echo "::error::no exports found in $dll"; exit 1; }
-          leaked="$(printf '%s\n' "$exports" | grep -Ev '^_?(wgpu|dawn)' | grep -v '^$' || true)"
-          if [ -n "$leaked" ]; then
-            echo "::error::leaked non-wgpu/dawn exports in $dll:"
-            printf '%s\n' "$leaked" | head -n 20
+          # The public C API must be present. It is the same 276 symbols the
+          # Linux shared library exports.
+          c_api="$(printf '%s\n' "$exports" | grep -Ec '^_?(wgpu|dawn)[A-Za-z0-9_]*$' || true)"
+          if [ "$c_api" -eq 0 ]; then
+            echo "::error::the public WebGPU C API is not exported from $dll"
             exit 1
           fi
-          count="$(printf '%s\n' "$exports" | grep -Ec '^_?(wgpu|dawn)' || true)"
-          echo "shared symbol check OK: $count wgpu/dawn exports, 0 leaks"
+          # Nothing from a third-party library may leak into the table.
+          third_party="$(printf '%s\n' "$exports" | grep -Ei 'absl|tint|spirv|protobuf|__cxa|std@@' || true)"
+          if [ -n "$third_party" ]; then
+            echo "::error::third-party symbols leaked into $dll:"
+            printf '%s\n' "$third_party" | head -n 20
+            exit 1
+          fi
+          # Everything else must be an MSVC-mangled name; anything else is an
+          # unknown leak that the C API and third-party checks did not classify.
+          unknown="$(printf '%s\n' "$exports" | grep -Ev '^[?]|^_?(wgpu|dawn)[A-Za-z0-9_]*$' | grep -v '^$' || true)"
+          if [ -n "$unknown" ]; then
+            echo "::error::unrecognised exports in $dll, expected only the C API and MSVC-mangled Dawn symbols:"
+            printf '%s\n' "$unknown" | head -n 20
+            exit 1
+          fi
+          echo "shared symbol check OK: $c_api C API exports, 0 third-party, 0 unknown"
 
       # Host-native archive: link against it and run the smoke binary.
       - name: Smoke test (host target)

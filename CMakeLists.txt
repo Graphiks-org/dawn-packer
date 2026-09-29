@@ -42,12 +42,14 @@ if (DAWN_PACKER_LINKAGE STREQUAL "SHARED")
     target_link_options(webgpu_dawn PRIVATE
       "-Wl,-exported_symbols_list,${_dawn_packer_exports}")
   elseif (WIN32)
-    # Nothing to add on a PE target: Dawn's headers declare the entry points with
-    # __declspec(dllexport), which already limits the export table to the public
-    # API (387 symbols, none outside wgpu*/dawn*, measured on windows-2022). A
-    # version script is an ELF concept and MSVC ignores it without a diagnostic,
-    # so an explicit WIN32 branch also keeps it away from any GNU linker running
-    # on Windows, which would try to honour it.
+    # Nothing to add on a PE target: MSVC only exports symbols marked
+    # __declspec(dllexport), so no third-party object leaks the way it would into
+    # an ELF dynamic symbol table. The public WebGPU C API is exported this way
+    # (276 symbols, the same set Linux ships), and Dawn's monolithic shared build
+    # additionally asks for its native C++ API (111 MSVC-mangled symbols), all
+    # measured on windows-2022. A version script is an ELF concept and MSVC
+    # ignores it without a diagnostic, so an explicit WIN32 branch also keeps it
+    # away from any GNU linker running on Windows, which would try to honour it.
   else()
     # --exclude-libs only localizes symbols coming from static archives; Dawn's
     # directly-linked objects (Tint, Dawn native, bundled Abseil) would still
