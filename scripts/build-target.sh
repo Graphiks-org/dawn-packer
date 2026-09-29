@@ -116,5 +116,29 @@ python3 packaging/provenance.py \
 
 cmake --build "$build_dir" --target dawn_packer
 cmake --install "$build_dir" --prefix "$install_dir"
+# Windows shared archives must carry the MSVC runtime the library needs, so the
+# consumer copies a directory instead of installing a redistributable. Only the
+# shared linkage produces a DLL to inspect.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    if [ "$linkage" = "SHARED" ]; then
+      dll="$install_dir/bin/webgpu_dawn.dll"
+      if [ ! -f "$dll" ]; then
+        echo "expected $dll after install" >&2
+        exit 1
+      fi
+      if [ -z "${VCToolsRedistDir:-}" ]; then
+        echo "VCToolsRedistDir is unset; enter the MSVC environment first" >&2
+        exit 1
+      fi
+      dumpbin //dependents "$dll" > "$install_dir/dependents.txt"
+      python3 packaging/windows-runtime.py \
+        --dependents "$install_dir/dependents.txt" \
+        --redist-dir "$VCToolsRedistDir" \
+        --dest "$install_dir/bin"
+      rm -f "$install_dir/dependents.txt"
+    fi
+    ;;
+esac
 touch "$install_dir/.dawn-packer-install"
 echo "installed: $install_dir"
