@@ -5,7 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$root/tests/helpers.sh"
 cd "$root"
 
-# Ruling P1: derive the host target instead of hardcoding linuxX64.
+# Derive the host target instead of hardcoding linuxX64.
 host_target() {
   case "$(uname -s)/$(uname -m)" in
     Darwin/arm64) printf '%s\n' macosArm64 ;;
@@ -20,9 +20,9 @@ if ! target="$(host_target)"; then
   exit 0
 fi
 
-# Finding (minor): stop picking an arbitrary archive. `ls` sorts shared before
-# static, so the old `head -n1` silently tested only the shared variant. Test
-# every linkage that has an archive, and keep stderr pristine.
+# Stop picking an arbitrary archive. `ls` sorts shared before static, so the
+# old `head -n1` silently tested only the shared variant. Test every linkage
+# that has an archive, and keep stderr pristine.
 tested=0
 for linkage in static shared; do
   archive="$(ls dist/"$target"/dawn-*-"$target"-"$linkage".tar.gz 2>/dev/null | head -n1 || true)"
@@ -32,7 +32,7 @@ for linkage in static shared; do
   fi
 
   err="$(mktemp)"
-  # Ruling P10: --link-only must compile and link without executing.
+  # --link-only must compile and link without executing.
   link_only_out="$(bash scripts/run-smoke-test.sh "$archive" --link-only 2>"$err")"
   [ ! -s "$err" ] || { cat "$err" >&2; rm -f "$err"; fail "smoke test wrote to stderr"; }
   printf '%s\n' "$link_only_out"

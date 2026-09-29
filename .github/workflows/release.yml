@@ -1,8 +1,8 @@
 name: release
 
-# Ruling P19: artifacts are run-scoped, so a `push`-on-tag workflow cannot see
-# the archives produced by the `build` workflow. Trigger off the `build` run
-# completing and download that specific run's artifacts by id.
+# Artifacts are run-scoped, so a `push`-on-tag workflow cannot see the archives
+# produced by the `build` workflow. Trigger off the `build` run completing and
+# download that specific run's artifacts by id.
 on:
   workflow_run:
     workflows: ["build"]

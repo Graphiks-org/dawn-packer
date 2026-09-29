@@ -34,7 +34,7 @@ included = {entry["target"] for entry in data["include"]}
 missing = expected - included
 assert not missing, f"missing from CI matrix: {missing}"
 
-# Ruling: dropped targets must never reach CI.
+# Dropped targets must never reach CI.
 leaked = dropped & included
 assert not leaked, f"dropped targets leaked into CI matrix: {leaked}"
 

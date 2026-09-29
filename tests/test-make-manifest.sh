@@ -27,13 +27,13 @@ python3 packaging/make-manifest.py \
 python3 packaging/validate-manifest.py "$work/manifest.json" >/dev/null || fail "manifest should validate"
 grep -q '"path": "include/webgpu/webgpu.h"' "$work/manifest.json" || fail "headers missing from manifest"
 grep -q '"path": "lib/libwebgpu_dawn.a"' "$work/manifest.json" || fail "library missing from manifest"
-# Finding (minor): the inventory must be exhaustive over what package.sh
-# stages: .ixx headers and Dawn's lib/cmake package files included.
+# The inventory must be exhaustive over what package.sh stages: .ixx headers
+# and Dawn's lib/cmake package files included.
 grep -q '"path": "include/webgpu/webgpu.ixx"' "$work/manifest.json" || fail ".ixx missing from manifest"
 grep -q '"path": "lib/cmake/Dawn/DawnConfig.cmake"' "$work/manifest.json" || fail "lib/cmake missing from manifest"
 grep -q '"compiler": {}' "$work/manifest.json" || fail "legacy compiler object changed"
 
-# Finding 4: --provenance populates compiler id/version/flags and cmake flags.
+# --provenance populates compiler id/version/flags and cmake flags.
 cat > "$work/provenance.json" <<'JSON'
 {
   "compiler": { "id": "apple-clang", "version": "17.0.0", "flags": ["-O2"] },

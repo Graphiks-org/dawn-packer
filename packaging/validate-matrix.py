@@ -7,7 +7,7 @@ REQUIRED = {"kotlinTarget", "triple", "os", "arch", "runner", "toolchain", "back
 ALLOWED_OS = {"linux", "macos", "ios", "tvos", "watchos", "windows", "android"}
 ALLOWED_BACKENDS = {"metal", "vulkan", "d3d12", "gles", "desktop_gl", "null"}
 ALLOWED_STATUS = {"v1", "spike", "dropped"}
-# Ruling P14: each Android target names exactly one NDK ABI, forwarded by
+# Each Android target names exactly one NDK ABI, forwarded by
 # scripts/build-target.sh as -DCMAKE_ANDROID_ARCH_ABI.
 ALLOWED_ANDROID_ABI = {"arm64-v8a", "armeabi-v7a", "x86_64", "x86"}
 

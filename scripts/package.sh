@@ -27,8 +27,8 @@ trap 'rm -rf "$stage"' EXIT
 cp -R "$install_dir/include" "$stage/include"
 cp -R "$install_dir/lib" "$stage/lib"
 
-# Finding 4: build-target.sh drops provenance next to the install tree. Pass it
-# through when present; make-manifest.py keeps its legacy output otherwise.
+# build-target.sh drops provenance next to the install tree. Pass it through
+# when present; make-manifest.py keeps its legacy output otherwise.
 provenance="$(dirname "$install_dir")/packer-provenance.json"
 provenance_args=()
 if [ -f "$provenance" ]; then

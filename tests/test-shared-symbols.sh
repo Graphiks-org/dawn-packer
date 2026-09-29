@@ -5,7 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$root/tests/helpers.sh"
 cd "$root"
 
-# Ruling P1: derive the host target instead of hardcoding linuxX64.
+# Derive the host target instead of hardcoding linuxX64.
 host_target() {
   case "$(uname -s)/$(uname -m)" in
     Darwin/arm64) printf '%s\n' macosArm64 ;;
@@ -34,10 +34,10 @@ tar xzf "$archive" -C "$work"
 shared_lib="$(find "$work/lib" \( -name '*.so' -o -name '*.dylib' -o -name '*.dll' \) -print -quit)"
 [ -n "$shared_lib" ] || fail "shared library missing"
 
-# Ruling P12: symbol inspection is OS-specific. On Darwin the exported ABI
-# lives in the Mach-O export trie, not the symbol table: `nm -gU` also reports
-# hidden (private-extern) symbols, so it cannot verify visibility.
-# `dyld_info -exports` is the Mach-O equivalent of ELF's `nm -D`.
+# Symbol inspection is OS-specific. On Darwin the exported ABI lives in the
+# Mach-O export trie, not the symbol table: `nm -gU` also reports hidden
+# (private-extern) symbols, so it cannot verify visibility. `dyld_info -exports`
+# is the Mach-O equivalent of ELF's `nm -D`.
 os="$(uname -s)"
 case "$os" in
   Darwin)

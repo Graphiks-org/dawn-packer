@@ -2,8 +2,8 @@
 # targets/matrix.json.
 #
 # The ABI is deliberately NOT set here: a single toolchain file cannot serve four
-# ABIs (Ruling P14). Instead `scripts/build-target.sh` forwards the matrix
-# entry's `androidAbi` field as -DCMAKE_ANDROID_ARCH_ABI (arm64-v8a, armeabi-v7a,
+# ABIs. Instead `scripts/build-target.sh` forwards the matrix entry's
+# `androidAbi` field as -DCMAKE_ANDROID_ARCH_ABI (arm64-v8a, armeabi-v7a,
 # x86_64, x86). This file relies on CMake's built-in Android/NDK support rather
 # than re-deriving compiler paths by hand.
 #

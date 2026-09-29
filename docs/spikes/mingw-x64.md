@@ -21,8 +21,8 @@ backend, not the whole of Dawn.
 | Host `protoc` | Homebrew protobuf 36.2 (Dawn pins runtime 36.0 -> **incompatible**) |
 | Disk (`/Volumes/Cache`) | 11.22 GiB free before, 11.05 GiB at peak (build trees), 11.21 GiB after cleanup |
 
-The toolchain file is `cmake/toolchains/mingw-x64.cmake`. The stock content from
-the brief (`clang`/`clang++` + triple only) is not enough on macOS: the host
+The toolchain file is `cmake/toolchains/mingw-x64.cmake`. A stock toolchain file
+(`clang`/`clang++` + triple only) is not enough on macOS: the host
 `/usr/bin/clang` uses Apple's `ld`, which cannot link PE/GNU objects. The
 committed file:
 
@@ -69,7 +69,7 @@ backend list does **not** restrict the Windows build without explicitly passing
 
 ### 2. Null-only configure + build
 
-The exact command from the controller (no compile):
+The exact command used for the null-only probe (no compile):
 
 ```bash
 cmake -S . -B build/mingwX64/null-only -G Ninja \

@@ -35,7 +35,7 @@ fi
 # from dawn/third_party/abseil-cpp. Match that recipe here.
 #
 # DAWN_FETCH_DEPENDENCIES=ON makes this script self-sufficient: submodules are
-# initialized non-recursively (Ruling P8), so on a fresh checkout
+# initialized non-recursively, so on a fresh checkout
 # dawn/third_party/abseil-cpp and protobuf are empty gitlinks and
 # third_party/CMakeLists.txt would `add_subdirectory` an empty Abseil and die.
 # The fetch runs fetch_dawn_dependencies.py, which populates them from the

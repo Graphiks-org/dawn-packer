@@ -14,10 +14,10 @@ esac
 entry="$(python3 scripts/matrix.py get "$target")"
 toolchain="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["toolchain"])' "$entry")"
 backends="$(python3 scripts/matrix.py backends "$target")"
-# Ruling P14: Android serves four ABIs but a single CMake toolchain file cannot
-# pick between them, so the ABI lives on the matrix entry and is forwarded here.
+# Android serves four ABIs but a single CMake toolchain file cannot pick
+# between them, so the ABI lives on the matrix entry and is forwarded here.
 android_abi="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1]).get("androidAbi", ""))' "$entry")"
-# Finding 2: optional per-target extra configure flags (e.g. macosArm64's
+# Optional per-target extra configure flags (e.g. macosArm64's
 # -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0). These do not touch the toolchain field,
 # so native targets still receive no host protoc.
 # Read with a `while` loop, NOT `mapfile` (bash 4+): macOS ships /bin/bash 3.2
@@ -90,10 +90,10 @@ rm -rf "$build_dir" "$install_dir"
 mkdir -p "$build_dir" "$install_dir"
 cmake "${cmake_args[@]}" "${backend_flags[@]}"
 
-# Finding 4: capture the real compiler identity and the exact configure
-# arguments so packaging can record provenance (spec section 5.3) instead of empty
-# objects. Written next to the install tree; scripts/package.sh picks it up when
-# present and degrades gracefully when absent.
+# Capture the real compiler identity and the exact configure arguments so
+# packaging can record provenance instead of empty objects. Written next to the
+# install tree; scripts/package.sh picks it up when present and degrades
+# gracefully when absent.
 provenance="$root/dist/$target/$linkage_lc/packer-provenance.json"
 cmake_cache="$build_dir/CMakeCache.txt"
 compiler_path="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "$cmake_cache" | head -n1)"

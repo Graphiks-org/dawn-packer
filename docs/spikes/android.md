@@ -37,7 +37,7 @@ resolves once the stale `ANDROID_NDK_HOME` is cleared.
 
 ## Toolchain file
 
-`cmake/toolchains/android.cmake` (created by this task):
+`cmake/toolchains/android.cmake`:
 
 ```cmake
 set(CMAKE_SYSTEM_NAME Android)
@@ -48,16 +48,16 @@ set(CMAKE_ANDROID_API 26)
 set(CMAKE_ANDROID_STL_TYPE c++_static)
 ```
 
-It deliberately does **not** set an ABI. Ruling P14: one toolchain file cannot
-serve four ABIs, so `scripts/build-target.sh` forwards the matrix entry's new
+It deliberately does **not** set an ABI. One toolchain file cannot serve four
+ABIs, so `scripts/build-target.sh` forwards the matrix entry's new
 `androidAbi` field as `-DCMAKE_ANDROID_ARCH_ABI`. The file relies on CMake's
 built-in Android/NDK support and the NDK's own hooks rather than re-deriving
 compiler paths.
 
-Two corrections to the brief's snippet, both applied and required:
+Two corrections to the first draft, both applied and required:
 
 * The STL variable is **`CMAKE_ANDROID_STL_TYPE`** (CMake's built-in Android
-  support). The brief's `CMAKE_ANDROID_STL` is the NDK toolchain-file spelling
+  support). The older `CMAKE_ANDROID_STL` is the NDK toolchain-file spelling
   and is a silent no-op here.
 * `CMAKE_SYSTEM_VERSION` and `CMAKE_ANDROID_API` must agree; both are `26`.
 
@@ -171,8 +171,8 @@ CMake Warning (deprecated) at third_party/protobuf/CMakeLists.txt:7 (cmake_polic
 ```
 
 Dawn's protobuf gate was not hit: `build-target.sh` supplies the host `protoc`
-(Task 9b), and the first cross build spent ~100 s rebuilding it before the arm64
-build.
+(the host protoc bootstrap step), and the first cross build spent ~100 s
+rebuilding it before the arm64 build.
 
 Dry run stays side-effect free and now shows the forwarded ABI:
 

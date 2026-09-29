@@ -8,7 +8,7 @@ python3 "$root/packaging/validate-matrix.py" "$root/targets/matrix.json" >/dev/n
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad.json" >/dev/null 2>&1; then
   fail "bad matrix should be rejected"
 fi
-# Ruling P14: android entries must name a valid NDK ABI...
+# android entries must name a valid NDK ABI...
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-android-abi.json" >/dev/null 2>&1; then
   fail "wrong androidAbi should be rejected"
 fi
@@ -16,7 +16,7 @@ fi
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-extra-android-abi.json" >/dev/null 2>&1; then
   fail "androidAbi on a non-android entry should be rejected"
 fi
-# Finding 2: extraCmakeArgs, when present, must be a list of strings.
+# extraCmakeArgs, when present, must be a list of strings.
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-extra-cmake-args.json" >/dev/null 2>&1; then
   fail "non-list extraCmakeArgs should be rejected"
 fi

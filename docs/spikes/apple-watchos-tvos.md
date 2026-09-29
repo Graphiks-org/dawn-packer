@@ -38,7 +38,8 @@ CMake's `Platform/tvOS.cmake` and `Platform/watchOS.cmake` are present in CMake
 ## Toolchain files
 
 All five were created and all are referenced by `targets/matrix.json` exactly
-where the matrix already pointed (Ruling P3: two watchOS device toolchains).
+where the matrix already pointed; two watchOS device toolchains exist because the
+arm64 and arm64_32 ABIs need different architectures.
 
 `cmake/toolchains/apple-tvos.cmake` (device arm64):
 
@@ -66,7 +67,7 @@ set(CMAKE_OSX_ARCHITECTURES arm64_32)
 `cmake/toolchains/apple-watchos-simulator.cmake` (simulator arm64):
 `watchsimulator` sysroot, `CMAKE_OSX_ARCHITECTURES arm64`.
 
-The Xcode 26.5 SDKs accepted the brief's deployment floors unchanged (tvOS 15.0,
+The Xcode 26.5 SDKs accepted the deployment floors unchanged (tvOS 15.0,
 watchOS 8.0); no floor was raised. tvOS objects carry `minos 15.0` and
 `-mwatchos-version-min=8.0` was accepted at configure for watchOS.
 
@@ -166,8 +167,8 @@ for `DAWN_PLATFORM_IS_ARM64` and then statically asserts 8-byte `size_t`. ILP32
 ## Verdict
 
 - **tvOS (`tvosArm64`, `tvosSimulatorArm64`) -- `feasible`.** Metal + null build,
-  archive and install with unchanged toolchains and the brief's deployment
-  floors. The only wrapper-level obstacle is the generic cross-compile host
+  archive and install with unchanged toolchains and the deployment floors. The
+  only wrapper-level obstacle is the generic cross-compile host
   `protoc` requirement, which any iOS/tvOS CI job must satisfy anyway (Dawn CI
   does). Matrix status stays `v1`.
 - **watchOS (`watchosArm64`, `watchosDeviceArm64`, `watchosSimulatorArm64`) --
@@ -205,7 +206,7 @@ were removed after use.
 - `cmake/toolchains/apple-tvos.cmake` (new)
 - `cmake/toolchains/apple-tvos-simulator.cmake` (new)
 - `cmake/toolchains/apple-watchos.cmake` (new, `arm64_32`)
-- `cmake/toolchains/apple-watchos-device.cmake` (new, `arm64`; Ruling P3)
+- `cmake/toolchains/apple-watchos-device.cmake` (new, `arm64`)
 - `cmake/toolchains/apple-watchos-simulator.cmake` (new)
 - `docs/spikes/apple-watchos-tvos.md` (new, this file)
 - `targets/matrix.json` -- three watchOS entries `spike` -> `dropped`

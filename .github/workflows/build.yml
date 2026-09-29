@@ -15,8 +15,8 @@ concurrency:
 
 jobs:
   # Emit the build matrix from targets/matrix.json (dropped targets excluded).
-  # Ruling P4/P17: mingwX64 and all watchOS targets are dropped and never reach
-  # CI; this job is the single source of truth for what is built.
+  # mingwX64 and all watchOS targets are dropped and never reach CI; this job is
+  # the single source of truth for what is built.
   matrix:
     runs-on: ubuntu-24.04
     outputs:
@@ -38,10 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Ruling P8: never `recursive` -- Dawn's own submodules (v8, LLVM,
-          # SwiftShader, ANGLE, ...) are multi-GB and unnecessary. `dawn` is
-          # initialised here (non-recursively) and Dawn's CMake dependency
-          # fetching populates third_party.
+          # Never init Dawn's recursive submodules: v8, LLVM, SwiftShader and
+          # ANGLE are multi-GB and unnecessary. `dawn` is initialised here
+          # (non-recursively) and Dawn's CMake dependency fetching populates
+          # third_party.
           submodules: true
       - name: Fast tests
         run: |
@@ -70,14 +70,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Ruling P8: non-recursive. `scripts/sync.sh` re-initialises `dawn`
-          # idempotently; keeping the submodule out of the recursive graph
-          # avoids multi-GB downloads that are never used.
+          # Submodules are non-recursive. `scripts/sync.sh` re-initialises
+          # `dawn` idempotently; keeping the submodule out of the recursive
+          # graph avoids multi-GB downloads that are never used.
           submodules: true
 
-      # Ruling P18: `scripts/run-smoke-test.sh` links with the HOST linker, so
-      # it is only meaningful for the runner's own target. Derive that target
-      # once here and compare it when deciding smoke test vs structural check.
+      # The smoke test links with the HOST linker, so it is only meaningful for
+      # the runner's own target. Derive that target once here and compare it when
+      # deciding smoke test vs structural check.
       - name: Derive host target
         id: host
         run: |
@@ -102,9 +102,10 @@ jobs:
           path: dawn/third_party
           key: dawn-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dawn-pin.env') }}-${{ hashFiles('.git/modules/dawn/HEAD') }}
 
-      # Cross builds need a host `protoc` (Task 9b, ~100s to build); only the
-      # cross targets (Android/iOS/tvOS) use it. Cached separately from the
-      # Dawn deps so a native job never saves an empty directory.
+      # Cross builds need a host `protoc` (the host protoc bootstrap step,
+      # ~100s to build); only the cross targets (Android/iOS/tvOS) use it.
+      # Cached separately from the Dawn deps so a native job never saves an
+      # empty directory.
       - name: Cache host protoc
         if: startsWith(matrix.target, 'android') || startsWith(matrix.target, 'ios') || startsWith(matrix.target, 'tvos')
         uses: actions/cache@v4
@@ -125,9 +126,9 @@ jobs:
           sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev \
             mesa-common-dev libx11-xcb-dev pkg-config ninja-build
 
-      # Ruling P10/P14: pin the NDK to the revision validated in
-      # docs/spikes/android.md (27.3.13750724, API 26) and fail loudly instead
-      # of silently building against whichever NDK happens to be active.
+      # Pin the NDK to the revision validated in docs/spikes/android.md
+      # (27.3.13750724, API 26) and fail loudly instead of silently building
+      # against whichever NDK happens to be active.
       - name: Pin Android NDK 27.3.13750724
         if: startsWith(matrix.target, 'android')
         run: |
@@ -154,8 +155,8 @@ jobs:
       - name: Package
         run: bash scripts/package.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
 
-      # Finding 3: verify the ELF version script kept Linux shared archives to
-      # the public API. Runs on the Linux host, so no extra build is needed.
+      # Verify the ELF version script kept Linux shared archives to the public
+      # API. Runs on the Linux host, so no extra build is needed.
       - name: Shared symbol check (Linux)
         if: runner.os == 'Linux' && matrix.linkage == 'shared'
         run: |
@@ -200,9 +201,9 @@ jobs:
           fi
           bash scripts/run-smoke-test.sh "${archives[0]}"
 
-      # Ruling P18: for every other target the host linker cannot link the
-      # archive, so --link-only is NOT attempted. The build+package is the
-      # verification; here we assert the archive's structure and manifest.
+      # For every other target the host linker cannot link the archive, so
+      # --link-only is NOT attempted. The build+package is the verification;
+      # here we assert the archive's structure and manifest.
       - name: Structural check (cross target)
         if: steps.host.outputs.host != matrix.target
         run: |

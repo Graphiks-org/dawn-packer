@@ -22,9 +22,9 @@ if printf '%s\n' "$native" | grep -q -- '-DPROTOC_EXECUTABLE='; then
   fail "native target must not receive -DPROTOC_EXECUTABLE"
 fi
 
-# Ruling P15 (folded Task 11): linuxArm64 produces no artifacts on this macOS
-# host, so only its wiring is verifiable here. It is a host-native target on its
-# own Linux runner: it must receive neither a toolchain file nor a host protoc.
+# linuxArm64 produces no artifacts on this macOS host, so only its wiring is
+# verifiable here. It is a host-native target on its own Linux runner: it must
+# receive neither a toolchain file nor a host protoc.
 linux_arm64="$(DAWN_PACKER_DRY_RUN=1 bash scripts/build-target.sh linuxArm64 static)"
 if printf '%s\n' "$linux_arm64" | grep -q -- '-DCMAKE_TOOLCHAIN_FILE='; then
   fail "linuxArm64 must not receive -DCMAKE_TOOLCHAIN_FILE"
@@ -33,7 +33,7 @@ if printf '%s\n' "$linux_arm64" | grep -q -- '-DPROTOC_EXECUTABLE='; then
   fail "linuxArm64 must not receive -DPROTOC_EXECUTABLE"
 fi
 
-# Ruling P14: Android targets forward their matrix entry's ABI as
+# Android targets forward their matrix entry's ABI as
 # -DCMAKE_ANDROID_ARCH_ABI; native targets must not.
 android="$(DAWN_PACKER_DRY_RUN=1 bash scripts/build-target.sh androidNativeArm64 static)"
 printf '%s\n' "$android" | grep -q -- '-DCMAKE_ANDROID_ARCH_ABI=arm64-v8a' \
