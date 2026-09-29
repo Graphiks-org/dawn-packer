@@ -20,18 +20,18 @@ Cibles qui produisent une archive (les deux liaisons en CI) :
 
 | Cible | Backends | Validation locale |
 |---|---|---|
-| `macosArm64` | metal, null | archives static + shared dans `dist/` (smoke test exécuté) |
-| `iosArm64` | metal, null | archive static dans `dist/` (device : contrôle structurel) |
-| `iosSimulatorArm64` | metal, null | archive static dans `dist/` (cross) |
-| `iosX64` | metal, null | archive static dans `dist/` (cross) |
-| `tvosArm64` | metal, null | archive static dans `dist/` (cross) |
-| `tvosSimulatorArm64` | metal, null | archive static dans `dist/` (cross) |
-| `linuxX64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04`) |
-| `linuxArm64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04-arm`) |
-| `androidNativeArm64` | vulkan, gles, null | archive static dans `dist/` ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeArm32` | vulkan, gles, null | archive static dans `dist/` ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeX64` | vulkan, gles, null | archive static dans `dist/` ; NDK épinglé ; risque consommateur non levé |
-| `androidNativeX86` | vulkan, gles, null | archive static dans `dist/` ; NDK épinglé ; risque consommateur non levé |
+| `macosArm64` | metal, null | archive + install (static + shared) ; smoke test exécuté |
+| `iosArm64` | metal, null | archive + install ; device : contrôle structurel |
+| `iosSimulatorArm64` | metal, null | archive + install (cross) |
+| `iosX64` | metal, null | archive + install (cross) |
+| `tvosArm64` | metal, null | archive + install (cross) |
+| `tvosSimulatorArm64` | metal, null | arbre d'install seulement (archive en CI) |
+| `linuxX64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04`) ; rien en local |
+| `linuxArm64` | vulkan, gles, null | construit en CI (runner `ubuntu-24.04-arm`) ; rien en local |
+| `androidNativeArm64` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
+| `androidNativeArm32` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
+| `androidNativeX64` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
+| `androidNativeX86` | vulkan, gles, null | arbre d'install seulement (archive en CI) ; NDK épinglé ; risque consommateur non levé |
 
 Cibles abandonnées (`dropped`, aucune archive) :
 

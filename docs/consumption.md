@@ -33,10 +33,10 @@ filtrage sur le fichier voulu) :
 
 ```bash
 # macOS
-grep 'dawn-chromium-8077-linuxX64-static.tar.gz' SHA256SUMS | shasum -a 256 -c -
+grep 'dawn-chromium-8077-macosArm64-static.tar.gz' SHA256SUMS | shasum -a 256 -c -
 
 # Linux
-grep 'dawn-chromium-8077-macosArm64-static.tar.gz' SHA256SUMS | sha256sum -c -
+grep 'dawn-chromium-8077-linuxX64-static.tar.gz' SHA256SUMS | sha256sum -c -
 ```
 
 Puis extraire dans un répertoire local, par exemple
@@ -165,8 +165,9 @@ l'application, pas seulement liée au build :
 - **Apple** : embarquer et signer le `.dylib` (par exemple dans
   `Contents/Frameworks/`), et référencer son chemin via `@rpath`/`@loader_path`.
   La bibliothèque partagée porte déjà ses dépendances Apple dans ses *load
-  commands* (`otool -L` liste Metal, Foundation, CoreGraphics, QuartzCore,
-  IOKit, IOSurface) ; le consommateur n'a donc pas à les relier à nouveau.
+  commands* (`otool -L` liste CoreFoundation, Foundation, IOSurface, QuartzCore,
+  Cocoa, IOKit, Metal et `libc++`) ; le consommateur n'a donc pas à les relier à
+  nouveau.
 - **Linux/desktop** : installer le `.so` avec l'application et le rendre
   trouvable (`RPATH`, `LD_LIBRARY_PATH`, ou à côté de l'exécutable).
 
