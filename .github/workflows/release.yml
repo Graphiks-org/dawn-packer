@@ -2,7 +2,9 @@ name: release
 
 # Artifacts are run-scoped, so a `push`-on-tag workflow cannot see the archives
 # produced by the `build` workflow. Trigger off the `build` run completing and
-# download that specific run's artifacts by id.
+# download that specific run's artifacts by id. Runs that were not triggered by
+# a version tag are skipped by the `if` guard on the release job, so a manual
+# `build` run never publishes anything.
 on:
   workflow_run:
     workflows: ["build"]
