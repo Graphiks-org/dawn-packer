@@ -45,6 +45,13 @@ def errors(data):
             problems.append(f"{where}: androidAbi is only allowed for os=android")
         if entry["status"] not in ALLOWED_STATUS:
             problems.append(f"{where}: bad status {entry['status']}")
+        # Optional per-target cmake flags (e.g. macosArm64's deployment target).
+        # When present it must be a list of strings so build-target.sh can append
+        # it verbatim to the configure command.
+        extra = entry.get("extraCmakeArgs")
+        if extra is not None:
+            if not isinstance(extra, list) or not all(isinstance(arg, str) for arg in extra):
+                problems.append(f"{where}: extraCmakeArgs must be a list of strings")
         if not entry["backends"]:
             problems.append(f"{where}: backends must not be empty")
         for backend in entry["backends"]:

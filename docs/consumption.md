@@ -176,6 +176,12 @@ l'application, pas seulement liée au build :
 
 ## 6. Contraintes et cibles non disponibles
 
+- **macOS** (`macosArm64`) : la bibliothèque est construite avec
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0`, le minimum macOS de Kotlin/Native
+  2.4.20. Son `minos` effective est donc **12.0** (et non la version du runner
+  de build) ; `vtool -show-build` / `otool -l` sur un objet de l'archive le
+  confirme. Les cibles iOS/tvOS portent de même leur plancher via leur
+  toolchain (`15.0`).
 - **Android** : les archives `androidNative*` sont construites avec le NDK
   **27.3.13750724** (API 26, STL `c++_static`). La consumabilité Kotlin/Native
   n'est **pas** établie : Kotlin/Native 2.4.20 lie sa propre libc++ statique

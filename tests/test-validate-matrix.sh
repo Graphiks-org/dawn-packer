@@ -16,5 +16,9 @@ fi
 if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-extra-android-abi.json" >/dev/null 2>&1; then
   fail "androidAbi on a non-android entry should be rejected"
 fi
+# Finding 2: extraCmakeArgs, when present, must be a list of strings.
+if python3 "$root/packaging/validate-matrix.py" "$root/tests/fixtures/matrix-bad-extra-cmake-args.json" >/dev/null 2>&1; then
+  fail "non-list extraCmakeArgs should be rejected"
+fi
 python3 "$root/scripts/matrix.py" get linuxX64 | grep -q '"triple": "x86_64-unknown-linux-gnu"' || fail "matrix.py get failed"
 pass "validate-matrix"

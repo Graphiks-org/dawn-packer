@@ -76,6 +76,55 @@ fi
 rm -rf "$build_dir" "$install_dir"
 mkdir -p "$build_dir" "$install_dir"
 cmake "${cmake_args[@]}" "${backend_flags[@]}"
+
+# Finding 4: capture the real compiler identity and the exact configure
+# arguments so packaging can record provenance (spec §5.3) instead of empty
+# objects. Written next to the install tree; scripts/package.sh picks it up when
+# present and degrades gracefully when absent.
+provenance="$root/dist/$target/$linkage_lc/packer-provenance.json"
+cmake_cache="$build_dir/CMakeCache.txt"
+compiler_path="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "$cmake_cache" | head -n1)"
+compiler_flags="$(sed -n 's/^CMAKE_CXX_FLAGS:[^=]*=//p' "$cmake_cache" | head -n1)"
+compiler_version=""
+if [ -n "$compiler_path" ] && [ -x "$compiler_path" ]; then
+  compiler_version="$("$compiler_path" --version 2>/dev/null | head -n1 || true)"
+fi
+python3 - "$provenance" "$compiler_path" "$compiler_version" "$compiler_flags" -- \
+  "${cmake_args[@]}" "${backend_flags[@]}" <<'PY'
+import json
+import os
+import re
+import sys
+
+out, compiler_path, compiler_version, compiler_flags = sys.argv[1:5]
+flag_start = sys.argv.index("--") + 1
+cmake_flags = sys.argv[flag_start:]
+
+version_line = compiler_version.strip()
+name = os.path.basename(compiler_path) if compiler_path else ""
+haystack = version_line.lower()
+if "apple clang" in haystack:
+    compiler_id = "apple-clang"
+elif "clang" in haystack:
+    compiler_id = "clang"
+elif "gnu" in haystack or name in {"gcc", "g++"}:
+    compiler_id = "gcc"
+else:
+    compiler_id = name or "unknown"
+
+match = re.search(r"\d+(?:\.\d+)+", version_line)
+version = match.group(0) if match else version_line
+cxx_flags = [token for token in re.split(r"\s+", compiler_flags.strip()) if token]
+
+provenance = {
+    "compiler": {"id": compiler_id, "version": version, "flags": cxx_flags},
+    "cmake": {"buildType": "Release", "flags": cmake_flags},
+}
+with open(out, "w", encoding="utf-8") as handle:
+    json.dump(provenance, handle, indent=2)
+    handle.write("\n")
+PY
+
 cmake --build "$build_dir" --target dawn_packer
 cmake --install "$build_dir" --prefix "$install_dir"
 touch "$install_dir/.dawn-packer-install"

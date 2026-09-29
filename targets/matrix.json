@@ -3,7 +3,7 @@
   "targets": [
     { "kotlinTarget": "linuxX64", "triple": "x86_64-unknown-linux-gnu", "os": "linux", "arch": "x64", "runner": "ubuntu-24.04", "toolchain": "", "backends": ["vulkan", "gles", "null"], "status": "v1" },
     { "kotlinTarget": "linuxArm64", "triple": "aarch64-unknown-linux-gnu", "os": "linux", "arch": "arm64", "runner": "ubuntu-24.04-arm", "toolchain": "", "backends": ["vulkan", "gles", "null"], "status": "v1" },
-    { "kotlinTarget": "macosArm64", "triple": "aarch64-apple-macos", "os": "macos", "arch": "arm64", "runner": "macos-15", "toolchain": "", "backends": ["metal", "null"], "status": "v1" },
+    { "kotlinTarget": "macosArm64", "triple": "aarch64-apple-macos", "os": "macos", "arch": "arm64", "runner": "macos-15", "toolchain": "", "extraCmakeArgs": ["-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0"], "backends": ["metal", "null"], "status": "v1" },
     { "kotlinTarget": "iosArm64", "triple": "aarch64-apple-ios", "os": "ios", "arch": "arm64", "runner": "macos-15", "toolchain": "cmake/toolchains/apple-ios.cmake", "backends": ["metal", "null"], "status": "v1" },
     { "kotlinTarget": "iosSimulatorArm64", "triple": "aarch64-apple-ios-simulator", "os": "ios", "arch": "arm64", "runner": "macos-15", "toolchain": "cmake/toolchains/apple-ios-simulator.cmake", "backends": ["metal", "null"], "status": "v1" },
     { "kotlinTarget": "iosX64", "triple": "x86_64-apple-ios-simulator", "os": "ios", "arch": "x64", "runner": "macos-15", "toolchain": "cmake/toolchains/apple-ios-simulator-x64.cmake", "backends": ["metal", "null"], "status": "v1" },
