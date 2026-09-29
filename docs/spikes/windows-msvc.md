@@ -1,9 +1,9 @@
 # Spike: an MSVC build of Dawn for the `mingwX64` target
 
-**Status: measurement in progress.** The round-one results below are measured.
-The consumption questions (MinGW linking the MSVC import library, and a real
-`mingwX64` Kotlin/Native project) are still running; the verdict is not written
-yet.
+**Status: measurement in progress.** The results below are measured. The C-level
+consumption question is answered: MinGW links the MSVC import library and runs
+against the DLL. Still open are the Kotlin/Native project itself and whether the
+VC++ redistributable requirement can be removed; the verdict is not written yet.
 
 Context: the `mingwX64` target is `dropped` because building Dawn for it with
 MinGW-w64 is infeasible (see `docs/spikes/mingw-x64.md`). The documented fallback
@@ -93,8 +93,57 @@ table on its own: no leak, and no export option was needed. Two consequences:
 * on Linux the same guarantee needed an explicit version script (276 symbols,
   0 leaks, measured in CI); on Windows it comes for free.
 
-Whether `link.exe` reports `LNK4044` (unrecognised option) for the flag is being
-confirmed in the second round.
+Whether `link.exe` reports `LNK4044` (unrecognised option) for the flag: it does
+not. A grep of the build log for `LNK4044`, `unrecognized option` and
+`version-script` finds nothing, so the linker swallowed the option silently
+rather than warning about it.
+
+### 3. MinGW consumes the MSVC import library
+
+The whole point of the fallback: a GNU-ABI consumer, which is what Kotlin/Native's
+`mingwX64` target uses, compiling the same C source as the Linux smoke test and
+linking the MSVC import library.
+
+```powershell
+& "C:\mingw64\bin\gcc.exe" -I dist/spike-shared/include -c scripts/smoke-test/link-test.c -o probe/link-test.o
+& "C:\mingw64\bin\gcc.exe" probe/link-test.o dist/spike-shared/lib/webgpu_dawn.lib -o probe/link-test.exe
+Copy-Item dist/spike-shared/bin/webgpu_dawn.dll probe/
+./probe/link-test.exe
+```
+
+Result:
+
+```
+gcc.exe (x86_64-posix-seh-rev2, Built by MinGW-Builds project) 14.2.0
+compile exit: 0
+link exit: 0
+dawn-packer smoke test OK
+run exit: 0
+```
+
+So the pair works: MSVC builds the DLL, GNU ld links against the MSVC import
+library, and the executable loads the DLL and calls into it. The C API boundary
+is what makes the mismatch harmless, and the consumer's triple stays
+`x86_64-pc-windows-gnu`.
+
+### 4. Runtime dependencies of the DLL
+
+```
+MSVCP140.dll
+MSVCP140_ATOMIC_WAIT.dll
+VCRUNTIME140.dll
+VCRUNTIME140_1.dll
+USER32.dll
+api-ms-win-core-*.dll
+```
+
+The `api-ms-win-core-*` and `USER32` entries are Windows system libraries, but
+the four `MSVC*`/`VCRUNTIME*` ones are the Visual C++ redistributable. Shipping
+the DLL as-is therefore makes the VC++ redistributable a requirement for
+consumers. Building with the static CRT
+(`-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`) is the obvious way out and is
+being measured; if it works, the archives stay self-contained like the other
+targets.
 
 ## Not yet managed by the pipeline
 
@@ -125,9 +174,12 @@ Other gaps found by reading, all on the Windows path:
 
 ## Open questions
 
-1. Can a GNU-ABI consumer link against the MSVC import library and run against
-   the DLL? This is the whole point of the fallback: a C consumer compiled with
-   MinGW gcc, plus the same program built as a `mingwX64` Kotlin/Native cinterop
-   project.
-2. What does the DLL depend on at runtime? MSVC-built binaries normally need the
-   VC++ redistributable, which would become a distribution constraint.
+1. Does a real `mingwX64` Kotlin/Native cinterop project link and run against the
+   MSVC import library? The C-level probe above passes, but the acceptance
+   criterion is the Kotlin/Native toolchain itself. The first attempt failed on
+   the probe rather than on the toolchain: `cinterop` never received the include
+   directory, because the `.def`'s `compilerOpts` did not reach the compiler
+   (`fatal error: 'webgpu/webgpu.h' file not found`, exit 1). Being retried with
+   the include path passed on the command line.
+2. Can the VC++ redistributable requirement be removed? See the static CRT probe
+   above.
