@@ -1,0 +1,248 @@
+name: build
+
+# Manual dispatch and version tags only.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Emit the build matrix from targets/matrix.json (dropped targets excluded).
+  # mingwX64 and all watchOS targets are dropped and never reach CI; this job is
+  # the single source of truth for what is built.
+  matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate build matrix
+        id: gen
+        run: echo "matrix=$(python3 scripts/gen-ci-matrix.py)" >> "$GITHUB_OUTPUT"
+
+  # Genuinely fast contract tests. Deliberately excludes every test that runs a
+  # real Dawn build or duplicates the per-target `build` job below:
+  # tests/test-build-target.sh, tests/test-all-targets-buildable.sh,
+  # tests/test-shared-symbols.sh (builds a native shared archive) and
+  # tests/test-build-target-protoc.sh (rebuilds host protoc, ~100s).
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Never init Dawn's recursive submodules: v8, LLVM, SwiftShader and
+          # ANGLE are multi-GB and unnecessary. `dawn` is initialised here
+          # (non-recursively) and Dawn's CMake dependency fetching populates
+          # third_party.
+          submodules: true
+      - name: Fast tests
+        run: |
+          set -euo pipefail
+          tests=(
+            tests/test-sync.sh
+            tests/test-validate-matrix.sh
+            tests/test-make-manifest.sh
+            tests/test-validate-manifest.sh
+            tests/test-package.sh
+            tests/test-run-smoke-test.sh
+            tests/test-gen-ci-matrix.sh
+          )
+          for test_script in "${tests[@]}"; do
+            echo "=== ${test_script} ==="
+            bash "${test_script}"
+          done
+
+  build:
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Submodules are non-recursive. `scripts/sync.sh` re-initialises
+          # `dawn` idempotently; keeping the submodule out of the recursive
+          # graph avoids multi-GB downloads that are never used.
+          submodules: true
+
+      # The smoke test links with the HOST linker, so it is only meaningful for
+      # the runner's own target. Derive that target once here and compare it when
+      # deciding smoke test vs structural check.
+      - name: Derive host target
+        id: host
+        run: |
+          set -euo pipefail
+          case "$(uname -s)/$(uname -m)" in
+            Darwin/arm64) host_target=macosArm64 ;;
+            Linux/x86_64) host_target=linuxX64 ;;
+            Linux/aarch64 | Linux/arm64) host_target=linuxArm64 ;;
+            *)
+              echo "::error::unsupported runner host $(uname -s)/$(uname -m)"
+              exit 1
+              ;;
+          esac
+          echo "host=$host_target" >> "$GITHUB_OUTPUT"
+          echo "runner host target: $host_target"
+
+      # Keyed on the pinned Dawn tag + resolved revision and the runner
+      # OS/arch, so a dependency change invalidates the cache.
+      - name: Cache Dawn dependencies
+        uses: actions/cache@v4
+        with:
+          path: dawn/third_party
+          key: dawn-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dawn-pin.env') }}-${{ hashFiles('.git/modules/dawn/HEAD') }}
+
+      # Cross builds need a host `protoc` (the host protoc bootstrap step,
+      # ~100s to build); only the cross targets (Android/iOS/tvOS) use it.
+      # Cached separately from the Dawn deps so a native job never saves an
+      # empty directory.
+      - name: Cache host protoc
+        if: startsWith(matrix.target, 'android') || startsWith(matrix.target, 'ios') || startsWith(matrix.target, 'tvos')
+        uses: actions/cache@v4
+        with:
+          path: build/host-protoc
+          key: host-protoc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dawn-pin.env') }}-${{ hashFiles('.git/modules/dawn/HEAD') }}
+
+      - name: Sync Dawn
+        run: bash scripts/sync.sh
+
+      # Dawn needs X11/GL development packages for the Linux host builds
+      # (linuxX64/linuxArm64). Android targets get their headers from the NDK,
+      # so this step is skipped for them.
+      - name: Install Linux deps
+        if: runner.os == 'Linux' && !startsWith(matrix.target, 'android')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev \
+            mesa-common-dev libx11-xcb-dev pkg-config ninja-build
+
+      # Pin the NDK to the revision validated in docs/spikes/android.md
+      # (27.3.13750724, API 26) and fail loudly instead of silently building
+      # against whichever NDK happens to be active.
+      - name: Pin Android NDK 27.3.13750724
+        if: startsWith(matrix.target, 'android')
+        run: |
+          set -euo pipefail
+          ndk_version=27.3.13750724
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo "::error::ANDROID_SDK_ROOT/ANDROID_HOME is not set; cannot locate NDK $ndk_version"
+            exit 1
+          fi
+          ndk_dir="$sdk_root/ndk/$ndk_version"
+          if [ ! -d "$ndk_dir" ]; then
+            echo "::error::pinned Android NDK $ndk_version not found at $ndk_dir"
+            echo "installed NDK revisions under $sdk_root/ndk:"
+            ls -1 "$sdk_root/ndk" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$ndk_dir" >> "$GITHUB_ENV"
+          echo "using pinned Android NDK $ndk_version at $ndk_dir"
+
+      - name: Build
+        run: bash scripts/build-target.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
+
+      - name: Package
+        run: bash scripts/package.sh '${{ matrix.target }}' '${{ matrix.linkage }}'
+
+      # Verify the ELF version script kept Linux shared archives to the public
+      # API. Runs on the Linux host, so no extra build is needed.
+      - name: Shared symbol check (Linux)
+        if: runner.os == 'Linux' && matrix.linkage == 'shared'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          archives=(dist/$target/dawn-*-$target-shared.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one shared archive for $target, found ${#archives[@]}"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "${archives[0]}" -C "$work"
+          so="$(find "$work/lib" -name '*.so' -print -quit)"
+          [ -n "$so" ] || { echo "::error::shared library missing from ${archives[0]}"; exit 1; }
+          defined="$(nm -D --defined-only "$so" | awk 'NF>=3 {print $3}')"
+          [ -n "$defined" ] || { echo "::error::no dynamic symbols in $so"; exit 1; }
+          leaked="$(printf '%s\n' "$defined" | grep -Ev '^_?(wgpu|dawn)' | grep -v '^$' || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::leaked non-wgpu/dawn symbols in $so:"
+            printf '%s\n' "$leaked" | head -n 40
+            exit 1
+          fi
+          count="$(printf '%s\n' "$defined" | grep -Ec '^_?(wgpu|dawn)' || true)"
+          echo "shared symbol check OK: $count wgpu/dawn symbols, 0 leaks"
+
+      # Host-native archive: link against it and run the smoke binary.
+      - name: Smoke test (host target)
+        if: steps.host.outputs.host == matrix.target
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          linkage="${{ matrix.linkage }}"
+          archive_glob="dist/$target/dawn-*-$target-$linkage.tar.gz"
+          archives=($archive_glob)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one archive matching $archive_glob, found ${#archives[@]}"
+            ls -la "dist/$target" || true
+            exit 1
+          fi
+          bash scripts/run-smoke-test.sh "${archives[0]}"
+
+      # For every other target the host linker cannot link the archive, so
+      # --link-only is NOT attempted. The build+package is the verification;
+      # here we assert the archive's structure and manifest.
+      - name: Structural check (cross target)
+        if: steps.host.outputs.host != matrix.target
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          linkage="${{ matrix.linkage }}"
+          archive_glob="dist/$target/dawn-*-$target-$linkage.tar.gz"
+          archives=($archive_glob)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one archive matching $archive_glob, found ${#archives[@]}"
+            ls -la "dist/$target" || true
+            exit 1
+          fi
+          archive="${archives[0]}"
+          echo "structural check on $archive"
+          listing="$(tar tzf "$archive")"
+          grep -q '^lib/' <<<"$listing" || { echo "::error::archive is missing lib/"; exit 1; }
+          grep -q '^include/webgpu/webgpu\.h$' <<<"$listing" || { echo "::error::archive is missing include/webgpu/webgpu.h"; exit 1; }
+          grep -q '^manifest\.json$' <<<"$listing" || { echo "::error::archive is missing manifest.json"; exit 1; }
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "$archive" -C "$work" manifest.json
+          python3 - "$work/manifest.json" "$target" "$linkage" <<'PY'
+          import json, sys
+          manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+          expected_target, expected_linkage = sys.argv[2], sys.argv[3]
+          actual_target = manifest.get("target", {}).get("kotlinTarget")
+          actual_linkage = manifest.get("linkage")
+          if actual_target != expected_target:
+              sys.exit(f"manifest kotlinTarget {actual_target!r} != {expected_target!r}")
+          if actual_linkage != expected_linkage:
+              sys.exit(f"manifest linkage {actual_linkage!r} != {expected_linkage!r}")
+          print(f"structural check OK: {actual_target}/{actual_linkage}, {len(manifest['artifacts'])} artifacts")
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dawn-${{ matrix.target }}-${{ matrix.linkage }}
+          path: dist/${{ matrix.target }}/dawn-*.tar.gz
+          if-no-files-found: error

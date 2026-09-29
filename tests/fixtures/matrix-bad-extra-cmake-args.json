@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    { "kotlinTarget": "macosArm64", "triple": "aarch64-apple-macos", "os": "macos", "arch": "arm64", "runner": "macos-15", "toolchain": "", "extraCmakeArgs": "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0", "backends": ["metal", "null"], "status": "v1" }
+  ]
+}

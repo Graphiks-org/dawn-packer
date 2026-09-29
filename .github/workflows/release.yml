@@ -1,0 +1,89 @@
+name: release
+
+# Artifacts are run-scoped, so a `push`-on-tag workflow cannot see the archives
+# produced by the `build` workflow. Trigger off the `build` run completing and
+# download that specific run's artifacts by id.
+on:
+  workflow_run:
+    workflows: ["build"]
+    types: [completed]
+
+permissions:
+  # `contents: write` creates the release; `actions: read` is required to list
+  # and download artifacts that belong to another workflow run.
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    # Only a successful build triggered by a version tag gets released. The
+    # `event == 'push'` guard excludes a workflow_dispatch run started on a v...
+    # branch, which must never publish. For `workflow_run`, `github.ref` is the
+    # default branch, so the tag is read from `workflow_run.head_branch`.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    steps:
+      # Check out the tagged revision so the aggregation script matches the
+      # sources that produced the archives (workflow_run would otherwise
+      # check out the default branch's tip).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+
+      # run-id pins the download to the run whose completion triggered us.
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each archive carries a top-level manifest.json; extracting them into
+      # per-archive directories makes every manifest discoverable to the index.
+      - name: Extract archives
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(release-assets/*.tar.gz)
+          if [ "${#archives[@]}" -eq 0 ]; then
+            echo "::error::no *.tar.gz archives downloaded into release-assets"
+            exit 1
+          fi
+          rm -rf extract
+          mkdir -p extract
+          for archive in "${archives[@]}"; do
+            name="$(basename "$archive" .tar.gz)"
+            mkdir -p "extract/$name"
+            tar xzf "$archive" -C "extract/$name"
+          done
+          echo "extracted ${#archives[@]} archive(s)"
+
+      - name: Aggregate manifests
+        run: python3 scripts/build-index.py extract release-assets/index.json
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          (cd release-assets && sha256sum *.tar.gz > SHA256SUMS)
+          cat release-assets/SHA256SUMS
+
+      - name: Create release (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed via env (not interpolated into the script) so a hostile tag
+          # name cannot inject shell syntax into a step holding contents: write.
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --notes "Dawn packer release $TAG"
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          gh release upload "$TAG" release-assets/*.tar.gz release-assets/index.json release-assets/SHA256SUMS --clobber
