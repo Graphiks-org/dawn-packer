@@ -16,6 +16,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LINKAGES = ("static", "shared")
 
 
+def matrix_path():
+    """The shipped matrix, unless a caller overrides it (used by the tests)."""
+    override = os.environ.get("MATRIX_FILE")
+    return pathlib.Path(override) if override else ROOT / "targets" / "matrix.json"
+
+
 def selection(variable):
     """Parse a comma-separated filter into a set, or None when unset."""
     raw = os.environ.get(variable, "")
@@ -24,7 +30,7 @@ def selection(variable):
 
 
 def main():
-    with (ROOT / "targets" / "matrix.json").open(encoding="utf-8") as handle:
+    with matrix_path().open(encoding="utf-8") as handle:
         matrix = json.load(handle)
 
     wanted_targets = selection("TARGETS")
@@ -53,7 +59,9 @@ def main():
 
     include = []
     for entry in buildable:
-        for linkage in LINKAGES:
+        # `linkages: null` means "both", the same as omitting the key; the
+        # validator already reads it that way, so the generator must too.
+        for linkage in entry.get("linkages") or LINKAGES:
             if wanted_linkages and linkage not in wanted_linkages:
                 continue
             include.append({

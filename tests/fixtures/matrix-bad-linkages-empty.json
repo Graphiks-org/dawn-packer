@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    { "kotlinTarget": "linuxX64", "triple": "x86_64-unknown-linux-gnu", "os": "linux", "arch": "x64", "runner": "ubuntu-24.04", "toolchain": "", "linkages": [], "backends": ["vulkan", "null"], "status": "v1" }
+  ]
+}

@@ -3,8 +3,10 @@
 Prebuilt [Dawn](https://dawn.googlesource.com/dawn) (WebGPU) native libraries,
 published as GitHub Releases for non-web Kotlin/Native targets.
 
-This repository only produces libraries (`webgpu.h` headers + `libwebgpu_dawn`);
-any Kotlin/Native, JNI, Swift, etc. binding lives in the consuming project.
+This repository only produces libraries (`webgpu.h` headers plus the Dawn
+library: `libwebgpu_dawn`, or `webgpu_dawn.dll` with its import library and MSVC
+runtime on Windows); any Kotlin/Native, JNI, Swift, etc. binding lives in the
+consuming project.
 
 The Dawn pin (`chromium/8077`) is declared in `dawn-pin.env` (`DAWN_TAG`), resolved
 to a fixed commit by the `dawn/` submodule and recorded in
@@ -16,7 +18,7 @@ to a fixed commit by the `dawn/` submodule and recorded in
 backends, status). Targets with `status != "dropped"` are built by CI and
 published; the others are abandoned after the spike.
 
-Targets that produce an archive (both linkages in CI):
+Targets that produce an archive (all declared linkages are built in CI):
 
 | Target | Backends | Local validation |
 |---|---|---|
@@ -28,6 +30,7 @@ Targets that produce an archive (both linkages in CI):
 | `tvosSimulatorArm64` | metal, null | install tree only (archive in CI) |
 | `linuxX64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04`); nothing locally |
 | `linuxArm64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04-arm`); nothing locally |
+| `mingwX64` | d3d12, d3d11, vulkan, null | built in CI (runner `windows-2022`); consumer smoke run in CI |
 | `androidNativeArm64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
 | `androidNativeArm32` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
 | `androidNativeX64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
@@ -40,10 +43,10 @@ Dropped targets (`dropped`, no archive):
 | `watchosArm64` | watchOS SDK without `Metal.framework`/`IOSurface.framework`; `arm64_32` (ILP32) fails Dawn's `sizeof(size_t) == 8` assertion |
 | `watchosDeviceArm64` | watchOS SDK without `Metal.framework` or `IOSurface.framework` (configure `find_library(Metal) REQUIRED` fails) |
 | `watchosSimulatorArm64` | same: watchOS SDK without Metal/IOSurface |
-| `mingwX64` | D3D12 depends on Windows SDK libraries and a DLL copy that MinGW-w64 does not provide |
 
-See `docs/spikes/android.md`, `docs/spikes/apple-watchos-tvos.md` and
-`docs/spikes/mingw-x64.md` for the detailed verdicts.
+See `docs/spikes/android.md`, `docs/spikes/apple-watchos-tvos.md`,
+`docs/spikes/mingw-x64.md` and `docs/spikes/windows-msvc.md` for the detailed
+verdicts.
 
 ## Local build
 

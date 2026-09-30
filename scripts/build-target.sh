@@ -36,6 +36,7 @@ for backend in $backends; do
   case "$backend" in
     metal) backend_flags+=("-DDAWN_ENABLE_METAL=ON") ;;
     vulkan) backend_flags+=("-DDAWN_ENABLE_VULKAN=ON") ;;
+    d3d11) backend_flags+=("-DDAWN_ENABLE_D3D11=ON") ;;
     d3d12) backend_flags+=("-DDAWN_ENABLE_D3D12=ON") ;;
     gles) backend_flags+=("-DDAWN_ENABLE_OPENGLES=ON") ;;
     desktop_gl) backend_flags+=("-DDAWN_ENABLE_DESKTOP_GL=ON") ;;
@@ -100,45 +101,48 @@ compiler_path="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "$cmake_cache" | head 
 compiler_flags="$(sed -n 's/^CMAKE_CXX_FLAGS:[^=]*=//p' "$cmake_cache" | head -n1)"
 compiler_version=""
 if [ -n "$compiler_path" ] && [ -x "$compiler_path" ]; then
-  compiler_version="$("$compiler_path" --version 2>/dev/null | head -n1 || true)"
+  # MSVC's `cl` rejects `--version` and writes its version banner to stderr, so
+  # capture both streams; the module falls back to the CMake cache version when
+  # the banner (or the empty result) carries no version number.
+  compiler_version="$("$compiler_path" --version 2>&1 | head -n1 || true)"
 fi
-python3 - "$provenance" "$compiler_path" "$compiler_version" "$compiler_flags" -- \
-  "${cmake_args[@]}" "${backend_flags[@]}" <<'PY'
-import json
-import os
-import re
-import sys
-
-out, compiler_path, compiler_version, compiler_flags = sys.argv[1:5]
-flag_start = sys.argv.index("--") + 1
-cmake_flags = sys.argv[flag_start:]
-
-version_line = compiler_version.strip()
-name = os.path.basename(compiler_path) if compiler_path else ""
-haystack = version_line.lower()
-if "apple clang" in haystack:
-    compiler_id = "apple-clang"
-elif "clang" in haystack:
-    compiler_id = "clang"
-elif "gnu" in haystack or name in {"gcc", "g++"}:
-    compiler_id = "gcc"
-else:
-    compiler_id = name or "unknown"
-
-match = re.search(r"\d+(?:\.\d+)+", version_line)
-version = match.group(0) if match else version_line
-cxx_flags = [token for token in re.split(r"\s+", compiler_flags.strip()) if token]
-
-provenance = {
-    "compiler": {"id": compiler_id, "version": version, "flags": cxx_flags},
-    "cmake": {"buildType": "Release", "flags": cmake_flags},
-}
-with open(out, "w", encoding="utf-8") as handle:
-    json.dump(provenance, handle, indent=2)
-    handle.write("\n")
-PY
+# The literal `--` ends argparse option parsing: every cmake flag starts with
+# `-D`, which argparse would otherwise try to read as an option. `--cmake-cache`
+# supplies the authoritative compiler flags and the version when `--version` was
+# rejected (MSVC's `cl`).
+python3 packaging/provenance.py \
+  --compiler-name "$(basename "$compiler_path")" \
+  --version-line "$compiler_version" \
+  --cmake-cache "$cmake_cache" \
+  --cxx-flags "$compiler_flags" \
+  --out "$provenance" -- \
+  "${cmake_args[@]}" "${backend_flags[@]}"
 
 cmake --build "$build_dir" --target dawn_packer
 cmake --install "$build_dir" --prefix "$install_dir"
+# Windows shared archives must carry the MSVC runtime the library needs, so the
+# consumer copies a directory instead of installing a redistributable. Only the
+# shared linkage produces a DLL to inspect.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    if [ "$linkage" = "SHARED" ]; then
+      dll="$install_dir/bin/webgpu_dawn.dll"
+      if [ ! -f "$dll" ]; then
+        echo "expected $dll after install" >&2
+        exit 1
+      fi
+      if [ -z "${VCToolsRedistDir:-}" ]; then
+        echo "VCToolsRedistDir is unset; enter the MSVC environment first" >&2
+        exit 1
+      fi
+      dumpbin //dependents "$dll" > "$install_dir/dependents.txt"
+      python3 packaging/windows-runtime.py \
+        --dependents "$install_dir/dependents.txt" \
+        --redist-dir "$VCToolsRedistDir" \
+        --dest "$install_dir/bin"
+      rm -f "$install_dir/dependents.txt"
+    fi
+    ;;
+esac
 touch "$install_dir/.dawn-packer-install"
 echo "installed: $install_dir"

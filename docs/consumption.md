@@ -2,8 +2,9 @@
 
 `dawn-packer` publishes prebuilt [Dawn](https://dawn.googlesource.com/dawn)
 (WebGPU) native libraries, one archive per Kotlin/Native target and per linkage
-(`static` or `shared`). This page describes downloading, verification, the
-cinterop declaration and the system dependencies to link on the consumer side.
+(`static` or `shared`; `mingwX64` ships `shared` only). This page describes
+downloading, verification, the cinterop declaration and the system dependencies
+to link on the consumer side.
 
 The reference Dawn pin is `chromium/8077` (see `dawn-pin.env`); the slug used in
 file names replaces `/` with `-`, i.e. `chromium-8077`.
@@ -56,6 +57,9 @@ include/dawn/webgpu.h                      # WebGPU C API (the real header)
 include/dawn/...                           # additional Dawn headers
 lib/libwebgpu_dawn.a                       # static variant
 lib/libwebgpu_dawn.so | .dylib             # shared variant (instead of the .a)
+bin/webgpu_dawn.dll                        # Windows shared variant, alongside its runtime
+bin/msvcp140.dll | vcruntime140*.dll
+lib/webgpu_dawn.lib                        # Windows import library instead of the .a
 manifest.json
 ```
 
@@ -170,6 +174,9 @@ application, not merely linked at build time:
   link them again.
 - **Linux/desktop**: install the `.so` with the application and make it
   findable (`RPATH`, `LD_LIBRARY_PATH`, or next to the executable).
+- **Windows**: the archive carries `webgpu_dawn.dll` and the MSVC runtime DLLs
+  it needs in `bin/`; copy `bin/` next to the executable, because Windows
+  resolves an adjacent DLL without configuration.
 
 `scripts/run-smoke-test.sh` illustrates the dynamic link:
 `-L<lib> -lwebgpu_dawn -Wl,-rpath,<lib>`.
@@ -195,9 +202,14 @@ application, not merely linked at build time:
   no archive. The watchOS SDKs provide neither `Metal.framework` nor
   `IOSurface.framework`, and `arm64_32` (ILP32) fails Dawn's
   `sizeof(size_t) == 8` assertion.
-- **`mingwX64`**: no archive. The D3D12 backend requires Windows SDK
-  libraries and a DLL copy step that MinGW-w64 does not have.
-- The headers / the manifest are common to both linkages; only the
+- **`mingwX64`**: the archive is built with MSVC (D3D12, D3D11, Vulkan and null
+  backends) and consumed through its import library; the consumer triple stays
+  `x86_64-pc-windows-gnu`. The shared archive carries `webgpu_dawn.dll` and the
+  MSVC runtime DLLs it needs, so copying `bin/` next to the executable is the
+  whole deployment. No redistributable or system package is required. The DLL
+  also exports Dawn's native C++ API as MSVC-mangled names, which does not affect
+  a C consumer.
+- The headers and the manifest are the same across linkages; only the
   library changes. Check the Dawn revision actually built in
   `manifest.json` before debugging unexpected behavior.
 

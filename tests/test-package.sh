@@ -25,6 +25,9 @@ install="$work/install"
 mkdir -p "$install/include/webgpu" "$install/lib"
 printf '#pragma once\n' > "$install/include/webgpu/webgpu.h"
 printf 'fake-archive\n' > "$install/lib/libwebgpu_dawn.a"
+mkdir -p "$install/bin" "$install/share/doc"
+printf 'the-dll\n' > "$install/bin/webgpu_dawn.dll"
+printf 'note\n' > "$install/share/doc/note.txt"
 touch "$install/.dawn-packer-install"
 mkdir -p build
 printf 'chromium/7200\n' > build/dawn-tag.txt
@@ -38,4 +41,8 @@ assert_file "$archive"
 tar tzf "$archive" | grep -q '^include/webgpu/webgpu.h$' || fail "header missing from archive"
 tar tzf "$archive" | grep -q '^lib/libwebgpu_dawn.a$' || fail "library missing from archive"
 tar tzf "$archive" | grep -q '^manifest.json$' || fail "manifest missing from archive"
+tar tzf "$archive" | grep -q '^bin/webgpu_dawn.dll$' || fail "bin/ missing from archive"
+tar tzf "$archive" | grep -q '^share/doc/note.txt$' || fail "unanticipated directory missing from archive"
+tar xzf "$archive" -C "$work" manifest.json
+grep -q '"path": "bin/webgpu_dawn.dll"' "$work/manifest.json" || fail "bin/ missing from manifest"
 pass "package"

@@ -8,23 +8,22 @@ import pathlib
 import sys
 
 
+def portable_path(path):
+    """Return a path with forward slashes, whatever the host or path flavour.
+
+    A manifest is a shipped, portable contract: str(PureWindowsPath(...)) yields
+    backslashes, which a consumer on any platform must never see and which would
+    not match the POSIX member names in the archive.
+    """
+    return str(path).replace("\\", "/")
+
+
 def sha256_of(path):
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def collect(directory, base, extra_globs):
-    files = []
-    for pattern in extra_globs:
-        files.extend(sorted(pathlib.Path(directory).glob(pattern)))
-    unique = {}
-    for path in files:
-        if path.is_file():
-            unique[str(path.relative_to(base))] = path
-    return unique
 
 
 def main():
@@ -46,25 +45,20 @@ def main():
     install = pathlib.Path(args.install_dir).resolve()
     entry = json.loads(args.entry_json)
 
-    # Headers travel with every archive; libraries are the linkage-specific
-    # payload. The inventory must be exhaustive over what scripts/package.sh
-    # stages: every file under include/ (the install tree also emits .ixx) and
-    # every file under lib/ (the monolithic library plus Dawn's CMake package
-    # files under lib/cmake/).
-    # `lib/cmake/**/*` and not `lib/cmake/**`: a trailing `**` only recurses
-    # from Python 3.13 on, and a bare `**` degrades to a single-segment match
-    # on 3.12 (the ubuntu runners' interpreter), which silently dropped every
-    # CMake package file from the manifest.
-    payload = collect(install, install, [
-        "include/**/*.h",
-        "include/**/*.ixx",
-        "lib/*.a",
-        "lib/*.so*",
-        "lib/*.dylib",
-        "lib/*.dll",
-        "lib/*.lib",
-        "lib/cmake/**/*",
-    ])
+    # Enumerate the staged tree instead of allowlisting glob patterns. A glob
+    # allowlist silently drops any directory nobody thought of, which is how
+    # bin/webgpu_dawn.dll went missing from Windows archives while the manifest
+    # still claimed to be exhaustive. Files the packaging step adds itself are
+    # the only exclusions.
+    excluded_top_level = {".dawn-packer-install", "manifest.json"}
+    payload = {}
+    for path in sorted(install.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(install)
+        if relative.parts[0] in excluded_top_level:
+            continue
+        payload[portable_path(relative)] = path
     artifacts = []
     for relative, path in sorted(payload.items()):
         artifacts.append({"path": relative, "sha256": sha256_of(path), "size": path.stat().st_size})

@@ -77,22 +77,40 @@ on every non-Apple platform. Generated link flags for the shared build:
 LINK_FLAGS = /machine:x64 /INCREMENTAL:NO  -Wl,--version-script=.../webgpu_dawn_exports.map
 ```
 
-So the ELF-only option *is* handed to MSVC's linker. The DLL links anyway, and the
-resulting export table is exactly what the public-API promise requires:
+So the ELF-only option *is* handed to MSVC's linker. The DLL links anyway. An
+early check reported "387 symbols, 0 outside wgpu/dawn", but that was a false
+negative in the measuring filter: it tested whether the whole line matched
+`_?(wgpu|dawn)`, and MSVC-mangled Dawn names contain the substring `dawn`, so all
+of them passed. `llvm-readobj --coff-exports` on the real DLL gives the true
+breakdown:
 
 ```
 export count: 387
-exports outside wgpu/dawn: 0
+  public C API (wgpu*/dawn*, undecorated): 276
+  MSVC-mangled Dawn native C++:            111
+  third-party (absl, tint, spirv, protobuf, __cxa, std): 0
 ```
 
-`__declspec(dllexport)`, which Dawn's headers already use, restricts the export
-table on its own: no leak, and no export option was needed. Two consequences:
+The 276 C API symbols are the same set the Linux shared library exports. The 111
+extra symbols are Dawn's native C++ API, and they are deliberate upstream:
+`dawn/src/dawn/native/CMakeLists.txt:1049-1055` defines
+`DAWN_NATIVE_SHARED_LIBRARY` and `DAWN_NATIVE_IMPLEMENTATION` for the monolithic
+shared build, which makes `DAWN_NATIVE_EXPORT` expand to
+`__declspec(dllexport)` (`dawn/include/dawn/native/dawn_native_export.h:34`).
+Suppressing them would need a Dawn patch, which this project rejects on
+principle. Nothing from a third-party library leaks, because MSVC exports only
+what is explicitly marked.
+
+Two consequences:
 
 * the version script is dead weight on Windows and should be guarded by a `WIN32`
   branch, because a GNU-side Windows linker would try to honour it (a version
   script is an ELF concept, and the target is PE);
-* on Linux the same guarantee needed an explicit version script (276 symbols,
-  0 leaks, measured in CI); on Windows it comes for free.
+* on Linux the version script is what keeps the dynamic symbol table to the C API,
+  since ELF would otherwise export everything, third-party objects included (276
+  symbols, 0 leaks, measured in CI); on Windows the C++ API is exported
+  deliberately and third-party symbols never leak, because MSVC requires an
+  explicit `dllexport`.
 
 Whether `link.exe` reports `LNK4044` (unrecognised option) for the flag: it does
 not. A grep of the build log for `LNK4044`, `unrecognized option` and
@@ -224,6 +242,52 @@ requirements rather than toolchain limits:
 * consuming cinterop declarations requires
   `@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)`.
 
+### 7. The static linkage links, and is still not shippable
+
+The answer was not the expected one. An MSVC static library does link from MinGW,
+with three extra import libraries:
+
+```powershell
+& gcc.exe probe/link-test.o dist/spike-static/lib/webgpu_dawn.lib `
+    "<VC Tools>\lib\x64\vcruntime.lib" `
+    "<VC Tools>\lib\x64\oldnames.lib" `
+    "<Windows Kits>\Lib\10.0.26100.0\ucrt\x64\ucrt.lib" `
+    -o probe/link-test.exe
+```
+
+```
+=== attempt 1: dynamic CRT import libraries only (3 libraries) ===
+link exit: 0
+STATIC LINK (dynamic CRT): OK
+```
+
+So the static question is not settled by link failure. It is settled by four
+observations, none of which is about the link itself:
+
+* the three libraries that make it work are `vcruntime.lib` and `oldnames.lib`
+  from the MSVC toolset and `ucrt.lib` from the Windows SDK. None of them can
+  travel in the archive: an archive ships headers and a built library, not an SDK,
+  and the Visual C++ redistribution terms cover the runtime DLLs for app-local
+  deployment, not the toolset's import libraries. A consumer would therefore have
+  to supply an MSVC and Windows SDK installation, which breaks the property every
+  other target has -- copy the archive, link, run, no system prerequisite;
+* GNU ld only half understands the objects it was given: the link emits a stream of
+  `Warning: corrupt .drectve at end of def file`, one per object carrying MSVC
+  linker directives. It works, by tolerating what it does not parse;
+* the executable produced in attempt 1 was deliberately not run, so runtime
+  behaviour with a mixed MSVC/MinGW CRT is unmeasured. Attempt 2, which added the
+  static CRT libraries, failed outright
+  (`libcmt.lib: error adding symbols: file format not recognized`), so the one
+  configuration that could have made the runtime self-contained is not reachable
+  either;
+* the design's own success criterion is that a `mingwX64` consumer needs no system
+  prerequisite beyond Windows itself.
+
+Verdict for the static linkage: **not shipped**, and `linkages` stays `["shared"]`.
+This is a decision on the archive's contract rather than on the link, and it is
+reversible: the command above is the whole of what a future static archive would
+require its consumers to reproduce.
+
 ## Verdict
 
 `feasible`, for the `d3d12` + `null` entry the matrix declares. Unlike the MinGW
@@ -237,9 +301,12 @@ The route is:
   and no toolchain file (host == target, so `protoc` builds natively and the
   matrix entry's `toolchain` becomes empty);
 * `DAWN_BUILD_MONOLITHIC_LIBRARY=SHARED` yielding `bin/webgpu_dawn.dll` and
-  `lib/webgpu_dawn.lib`;
-* export control left to `__declspec(dllexport)`: 387 exported symbols, none
-  outside `wgpu*`/`dawn*`.
+  `lib/webgpu_dawn.lib`. The static linkage is deliberately not shipped: it links
+  from MinGW, but only with MSVC and Windows SDK import libraries that no archive
+  can carry (section 7);
+* export control left to `__declspec(dllexport)`: 387 exported symbols, the 276
+  public C API entries plus 111 MSVC-mangled Dawn native C++ entries, and no
+  third-party symbol.
 
 Constraints accepted or to be decided:
 
