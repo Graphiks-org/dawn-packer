@@ -108,7 +108,8 @@ if [ -n "$compiler_path" ] && [ -x "$compiler_path" ]; then
 fi
 # The literal `--` ends argparse option parsing: every cmake flag starts with
 # `-D`, which argparse would otherwise try to read as an option. `--cmake-cache`
-# supplies the version when `--version` was rejected (MSVC's `cl`).
+# supplies the authoritative compiler flags and the version when `--version` was
+# rejected (MSVC's `cl`).
 python3 packaging/provenance.py \
   --compiler-name "$(basename "$compiler_path")" \
   --version-line "$compiler_version" \

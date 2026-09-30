@@ -3,8 +3,10 @@
 Prebuilt [Dawn](https://dawn.googlesource.com/dawn) (WebGPU) native libraries,
 published as GitHub Releases for non-web Kotlin/Native targets.
 
-This repository only produces libraries (`webgpu.h` headers + `libwebgpu_dawn`);
-any Kotlin/Native, JNI, Swift, etc. binding lives in the consuming project.
+This repository only produces libraries (`webgpu.h` headers plus the Dawn
+library: `libwebgpu_dawn`, or `webgpu_dawn.dll` with its import library and MSVC
+runtime on Windows); any Kotlin/Native, JNI, Swift, etc. binding lives in the
+consuming project.
 
 The Dawn pin (`chromium/8077`) is declared in `dawn-pin.env` (`DAWN_TAG`), resolved
 to a fixed commit by the `dawn/` submodule and recorded in
@@ -28,7 +30,7 @@ Targets that produce an archive (all declared linkages are built in CI):
 | `tvosSimulatorArm64` | metal, null | install tree only (archive in CI) |
 | `linuxX64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04`); nothing locally |
 | `linuxArm64` | vulkan, gles, null | built in CI (runner `ubuntu-24.04-arm`); nothing locally |
-| `mingwX64` | d3d12, d3d11, vulkan, null | built in CI (runner windows-2022); consumer smoke run in CI |
+| `mingwX64` | d3d12, d3d11, vulkan, null | built in CI (runner `windows-2022`); consumer smoke run in CI |
 | `androidNativeArm64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
 | `androidNativeArm32` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |
 | `androidNativeX64` | vulkan, gles, null | install tree only (archive in CI); pinned NDK; consumer risk not retired |

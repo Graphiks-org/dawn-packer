@@ -75,7 +75,11 @@ jobs:
             tests/test-make-manifest.sh
             tests/test-validate-manifest.sh
             tests/test-package.sh
+            tests/test-check-inventory.sh
+            tests/test-provenance.sh
+            tests/test-windows-runtime.sh
             tests/test-run-smoke-test.sh
+            tests/test-matrix-extra-args.sh
             tests/test-gen-ci-matrix.sh
           )
           for test_script in "${tests[@]}"; do
@@ -261,8 +265,8 @@ jobs:
       # different invariant: MSVC only exports what is explicitly marked, so the
       # risk is a third-party symbol leaking rather than the C API being
       # over-exported. Dawn's monolithic shared build defines
-      # DAWN_NATIVE_SHARED_LIBRARY and DAWN_NATIVE_IMPLEMENTATION
-      # (src/dawn/native/CMakeLists.txt:1049-1055), which makes DAWN_NATIVE_EXPORT
+      # DAWN_NATIVE_SHARED_LIBRARY (src/dawn/native/CMakeLists.txt:1053) and
+      # DAWN_NATIVE_IMPLEMENTATION (:1047), which makes DAWN_NATIVE_EXPORT
       # expand to __declspec(dllexport) (include/dawn/native/dawn_native_export.h),
       # so Dawn's native C++ API is exported on purpose. The accepted set is the
       # public C API plus MSVC-mangled names whose outermost namespace is `dawn`.
@@ -325,7 +329,7 @@ jobs:
           leaks = [name for name in names if not is_public_c_api(name) and not is_dawn_mangled(name)]
           if leaks:
               print(
-                  "unrecognised exports in the DLL (neither the C API nor a Dawn-native mangled name):",
+                  "::error::unrecognised exports in the DLL (neither the C API nor a Dawn-native mangled name):",
                   file=sys.stderr,
               )
               for name in leaks[:20]:

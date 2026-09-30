@@ -49,7 +49,8 @@ if (DAWN_PACKER_LINKAGE STREQUAL "SHARED")
     # additionally asks for its native C++ API (111 MSVC-mangled symbols), all
     # measured on windows-2022. A version script is an ELF concept and MSVC
     # ignores it without a diagnostic, so an explicit WIN32 branch also keeps it
-    # away from any GNU linker running on Windows, which would try to honour it.
+    # away from the MinGW toolchain, whose GNU linker would try to honour it.
+    # (Cygwin does not define WIN32, so it never reaches this branch.)
   else()
     # --exclude-libs only localizes symbols coming from static archives; Dawn's
     # directly-linked objects (Tint, Dawn native, bundled Abseil) would still

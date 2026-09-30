@@ -2,8 +2,9 @@
 
 `dawn-packer` publishes prebuilt [Dawn](https://dawn.googlesource.com/dawn)
 (WebGPU) native libraries, one archive per Kotlin/Native target and per linkage
-(`static` or `shared`). This page describes downloading, verification, the
-cinterop declaration and the system dependencies to link on the consumer side.
+(`static` or `shared`; `mingwX64` ships `shared` only). This page describes
+downloading, verification, the cinterop declaration and the system dependencies
+to link on the consumer side.
 
 The reference Dawn pin is `chromium/8077` (see `dawn-pin.env`); the slug used in
 file names replaces `/` with `-`, i.e. `chromium-8077`.
@@ -173,6 +174,9 @@ application, not merely linked at build time:
   link them again.
 - **Linux/desktop**: install the `.so` with the application and make it
   findable (`RPATH`, `LD_LIBRARY_PATH`, or next to the executable).
+- **Windows**: the archive carries `webgpu_dawn.dll` and the MSVC runtime DLLs
+  it needs in `bin/`; copy `bin/` next to the executable, because Windows
+  resolves an adjacent DLL without configuration.
 
 `scripts/run-smoke-test.sh` illustrates the dynamic link:
 `-L<lib> -lwebgpu_dawn -Wl,-rpath,<lib>`.
@@ -205,7 +209,7 @@ application, not merely linked at build time:
   whole deployment. No redistributable or system package is required. The DLL
   also exports Dawn's native C++ API as MSVC-mangled names, which does not affect
   a C consumer.
-- The headers / the manifest are common to both linkages; only the
+- The headers and the manifest are the same across linkages; only the
   library changes. Check the Dawn revision actually built in
   `manifest.json` before debugging unexpected behavior.
 
