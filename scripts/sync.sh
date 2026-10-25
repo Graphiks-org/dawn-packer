@@ -22,7 +22,9 @@ shopt -s nullglob
 # expansion as an unbound variable and aborts.
 for p in patches/*.patch; do
   echo "Applying $p"
-  git -C dawn apply "$p"
+  # Absolute path: `git -C dawn` resolves relative arguments against dawn/,
+  # where patches/ does not exist.
+  git -C dawn apply "$root/$p"
 done
 
 mkdir -p build
