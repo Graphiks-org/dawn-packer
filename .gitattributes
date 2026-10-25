@@ -2,3 +2,7 @@
 # endings make the interpreter fail on the first line. Pin them to LF whatever
 # platform checks them out.
 *.sh text eol=lf
+# `git apply` matches context bytes exactly: a CRLF-materialized patch never
+# applies to Dawn (its .gitattributes pins sources to LF), so patches must stay
+# LF on every host, Windows runners included.
+*.patch text eol=lf
