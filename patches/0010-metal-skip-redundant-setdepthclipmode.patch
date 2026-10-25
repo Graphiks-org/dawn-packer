@@ -1,0 +1,22 @@
+diff --git a/src/dawn/native/metal/CommandBufferMTL.mm b/src/dawn/native/metal/CommandBufferMTL.mm
+index 9fa580c..1ede251 100644
+--- a/src/dawn/native/metal/CommandBufferMTL.mm
++++ b/src/dawn/native/metal/CommandBufferMTL.mm
+@@ -1977,10 +1977,13 @@ BindGroupTracker bindGroups(&storageBufferLengths,
+ 
+                 // When using and unclipped depth we need to clamp to the viewport, otherwise
+                 // Metal writes the raw value to the depth buffer, which doesn't match other
+-                // APIs.
+-                MTLDepthClipMode clipMode =
+-                    newPipeline->HasUnclippedDepth() ? MTLDepthClipModeClamp : MTLDepthClipModeClip;
+-                [encoder setDepthClipMode:clipMode];
++                // APIs. Skip the call otherwise: the iOS/tvOS simulator GPU rejects any
++                // setDepthClipMode call while Metal API validation is loaded
++                // (https://github.com/google/dawn/pull/66), and MTLDepthClipModeClip is the
++                // encoder default, so the explicit call carried no information.
++                if (newPipeline->UsesFragDepth() || newPipeline->HasUnclippedDepth()) {
++                    [encoder setDepthClipMode:MTLDepthClipModeClamp];
++                }
+ 
+                 newPipeline->Encode(encoder);
+ 
