@@ -59,7 +59,12 @@ bash scripts/package.sh linuxX64 static    # -> dist/linuxX64/dawn-chromium-8077
 The cross targets (iOS, tvOS, Android) need a host `protoc`, built
 automatically by `scripts/build-target.sh` via `scripts/build-host-protoc.sh`.
 Android targets additionally require `ANDROID_NDK_HOME` pointing at NDK
-**27.3.13750724**.
+**29.0.14206865**.
+
+The 64-bit Android shared libraries are linked with 16 KiB page alignment
+(`-Wl,-z,max-page-size=16384`, the Google Play requirement for apps targeting
+Android 15+); `scripts/check-elf-alignment.sh` verifies every published
+archive in CI.
 
 ## Tests
 

@@ -62,6 +62,24 @@ if (DAWN_PACKER_LINKAGE STREQUAL "SHARED")
     target_link_options(webgpu_dawn PRIVATE
       "-Wl,--version-script=${_dawn_packer_version_script}")
   endif()
+
+  # Android 16 KiB page sizes: Google Play requires 16 KiB ELF alignment for
+  # apps targeting Android 15+ on 64-bit devices (deadlines 2025-11-01 /
+  # 2027-02-01), i.e. every PT_LOAD of the shipped .so must be aligned to
+  # 16384 bytes or a multiple. The requirement is stated here explicitly
+  # because this project uses CMake's built-in Android support, which does NOT
+  # go through the NDK's own toolchain file where the NDK gates this flag
+  # (opt-in via ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES in r27, driver default in
+  # r28+): the r27 driver explicitly passes -z max-page-size=4096, so relying
+  # on toolchain defaults made the archives silently 4 KiB aligned. 64-bit
+  # ABIs only, mirroring the NDK's own gating: 16 KiB devices are 64-bit only.
+  # scripts/check-elf-alignment.sh verifies the produced .so in CI.
+  if (ANDROID)
+    if (CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR
+        CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+      target_link_options(webgpu_dawn PRIVATE "-Wl,-z,max-page-size=16384")
+    endif()
+  endif()
 endif()
 
 # NOTE: Dawn must be added WITHOUT EXCLUDE_FROM_ALL: CMake ignores install()
