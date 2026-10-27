@@ -165,7 +165,10 @@ application, not merely linked at build time:
 
 - **Android**: place the `.so` for the right ABI in
   `src/androidMain/jniLibs/<abi>/libwebgpu_dawn.so` (ABIs: `arm64-v8a`,
-  `armeabi-v7a`, `x86_64`, `x86`).
+  `armeabi-v7a`, `x86_64`, `x86`). The shipped `arm64-v8a` and `x86_64`
+  libraries are already 16 KiB page aligned; the APK must keep that alignment
+  when packaging them (`zipalign -P 16`, or AGP 8.5.1+ with
+  `useLegacyPackaging=false`). See section 6 for the full 16 KB constraint.
 - **Apple**: embed and sign the `.dylib` (for example in
   `Contents/Frameworks/`), and reference its path via `@rpath`/`@loader_path`.
   The shared library already carries its Apple dependencies in its *load
@@ -190,10 +193,20 @@ application, not merely linked at build time:
   confirms it. The iOS/tvOS targets likewise carry their floor via their
   toolchain (`15.0`).
 - **Android**: the `androidNative*` archives are built with NDK
-  **27.3.13750724** (API 26, STL `c++_static`). Kotlin/Native consumability
+  **29.0.14206865** (API 26, STL `c++_static`). The 64-bit shared libraries
+  (`arm64-v8a`, `x86_64`) are linked with `-Wl,-z,max-page-size=16384` and
+  the check runs on every published archive in CI: they are compatible with
+  16 KB page size devices, as Google Play requires for apps targeting
+  Android 15+ (enforced since 2025-11-01, updates blocked from 2027-02-01).
+  When consuming the **static** archives, the final link is the consumer's
+  responsibility: link with `-Wl,-z,max-page-size=16384` (Kotlin/Native's
+  bundled r19c-era linker does not apply it by default) and package the APK
+  with 16 KB zip alignment (`zipalign -P 16`, or AGP 8.5.1+ with
+  `useLegacyPackaging=false`). The 32-bit ABIs are unaffected: 16 KB devices
+  are 64-bit only. Kotlin/Native consumability
   is **not** established: Kotlin/Native 2.4.20 links its own static libc++
   from the r19c era, which does not define all the `std::__ndk1` symbols
-  referenced by the objects compiled with NDK 27. The risk is described in
+  referenced by the objects compiled with the pinned NDK. The risk is described in
   detail in `docs/spikes/android.md` ("Open risk: consumer C++ runtime") and is
   not retired by either of the candidate remediations until a KMP cinterop link
   **and** an on-device run have succeeded. Do not

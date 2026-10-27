@@ -136,7 +136,9 @@ target is declared consumable:
    sources/CMake may not build against r19c and that no such NDK is installed on
    this machine; this is the fallback if mechanism 1 cannot be made to work.
 
-The Dawn build pin remains **NDK 27.3.13750724**.
+The Dawn build pin remained **NDK 27.3.13750724** for this spike; it has since
+been repinned to **29.0.14206865** (see "Update (2026-10): 16 KiB page sizes
+and NDK r29 repin" at the end of this document).
 
 ## Commands and results
 
@@ -216,4 +218,84 @@ removed.
   Android toolchain, or once mechanism 1 or 2 is proven against the pinned NDK.
 * `ANDROID_NDK_HOME` is misconfigured on this machine (points at an uninstalled
   revision). Builds here override it explicitly; CI must set it to
-  `27.3.13750724`.
+  `29.0.14206865`.
+
+## Update (2026-10): 16 KiB page sizes and NDK r29 repin
+
+**Problem.** Google Play has required 16 KiB page size compatibility for apps
+targeting Android 15+ since 2025-11-01 (updates without it are blocked from
+2027-02-01): every `PT_LOAD` of a shipped 64-bit `.so` must be aligned to
+16384 bytes or a multiple of it. The r27 spike above unknowingly produced
+4 KiB aligned shared libraries:
+
+* the r27 clang **driver explicitly passes `-z max-page-size=4096`** (observed
+  with `clang -###` against the pinned 27.3.13750724), regardless of API level;
+* the NDK's own 16 KiB support in r27 is opt-in
+  (`ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES`) and lives **in the NDK's toolchain
+  files and ndk-build**, which this project deliberately does not use (it uses
+  CMake's built-in Android support instead) -- so the opt-in was unreachable;
+* nothing in CI verified the produced `.so`.
+
+**Changes.**
+
+* `CMakeLists.txt` links the 64-bit Android shared library with
+  `-Wl,-z,max-page-size=16384` explicitly: the requirement no longer depends
+  on which NDK revision is pinned. 64-bit ABIs only (`arm64-v8a`, `x86_64`),
+  mirroring the NDK's own gating: 16 KiB devices are 64-bit only.
+* New `scripts/check-elf-alignment.sh` (with
+  `tests/test-check-elf-alignment.sh` in the fast CI suite) verifies that
+  every `PT_LOAD` is aligned to a multiple of the requested minimum; the
+  build workflow runs it on each published `androidNativeArm64` /
+  `androidNativeX64` shared archive.
+* The NDK pin moves **27.3.13750724 -> 29.0.14206865** (r29, clang 21.0.0).
+  From r28 on the clang driver itself links 64-bit Android shared libraries
+  16 KiB aligned by default, so the explicit flag and the toolchain default
+  now agree; the flag stays so the property survives any future repin or
+  rollback. r29 is chosen over r28c (28.2.13676358, also installed locally)
+  because the `ubuntu-24.04` runner image ships 29.0.14206865, and the CI
+  "Pin Android NDK" step only verifies presence, it does not install.
+* `docs/consumption.md` documents the consumer side: shared archives are
+  16 KiB aligned; **static** consumers must add the flag at their own final
+  link (Kotlin/Native's bundled r19c-era linker does not apply it by default)
+  and package the APK with `zipalign -P 16` or AGP 8.5.1+
+  (`useLegacyPackaging=false`).
+
+**Probe evidence** (minimal `.so` linked by each NDK's clang, CMake-style
+`--target=aarch64-unknown-linux-android26 -shared`, API level irrelevant):
+
+| NDK | driver behaviour | resulting `PT_LOAD` align |
+| --- | --- | --- |
+| 27.3.13750724 | forces `-z max-page-size=4096` | `0x1000` |
+| 27.3.13750724 + explicit flag | user flag overrides the driver's | `0x4000` |
+| 28.2.13676358 | 16 KiB default | `0x4000` |
+| 29.0.14206865 | 16 KiB default | `0x4000` |
+
+The 32-bit ABIs stay 4 KiB aligned in every revision, which is correct:
+16 KiB devices are 64-bit only. Note for future rebuilds: since r28 the
+sysroot no longer defines the `PAGE_SIZE` macro for arm64-v8a/x86_64 by
+default; `dawn/src` does not use it (verified by grep), and the full rebuild
+below exercises the fetched `third_party` dependencies.
+
+**Validation** (macOS 26.6.2 arm64 host, CMake 4.4.4, NDK 29.0.14206865,
+Dawn `chromium/8077` @ `531028367c`):
+
+* `scripts/build-target.sh androidNativeArm64 shared` completes with **zero
+  errors** under clang 21.0.0: `dawn/src` and every fetched `third_party`
+  dependency (abseil, protobuf, spirv-tools) build without hitting the
+  removed `PAGE_SIZE` macro.
+* The actual link command carries both ELF options (`LINK_FLAGS` in
+  `build.ninja`): `-Wl,--version-script=...` **and**
+  `-Wl,-z,max-page-size=16384` -- the explicit CMake flag applies, and agrees
+  with the r29 driver default.
+* The installed `lib/libwebgpu_dawn.so` (20 MB) has all three `PT_LOAD`
+  segments at `0x4000` (16384); `scripts/check-elf-alignment.sh 16384`
+  passes on the packaged archive
+  (`dawn-chromium-8077-androidNativeArm64-shared.tar.gz`) and correctly
+  rejects a 4 KiB-aligned `.so` linked by the previous r27d NDK.
+* The ELF version script still holds under r29: **276** `wgpu`/`dawn`
+  dynamic symbols exported, **0** leaks (the same count the Linux shared
+  archive ships).
+* The other three ABIs and the static linkage run through the CI workflow
+  dispatch (full matrix), not this local run; the x86_64 driver behaviour
+  was probed directly (table above). The Kotlin/Native consumer risk below
+  is unchanged and still open.

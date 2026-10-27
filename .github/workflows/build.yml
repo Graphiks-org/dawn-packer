@@ -79,6 +79,7 @@ jobs:
             tests/test-provenance.sh
             tests/test-windows-runtime.sh
             tests/test-run-smoke-test.sh
+            tests/test-check-elf-alignment.sh
             tests/test-matrix-extra-args.sh
             tests/test-gen-ci-matrix.sh
           )
@@ -182,13 +183,13 @@ jobs:
           clang --version
 
       # Pin the NDK to the revision validated in docs/spikes/android.md
-      # (27.3.13750724, API 26) and fail loudly instead of silently building
+      # (29.0.14206865, API 26) and fail loudly instead of silently building
       # against whichever NDK happens to be active.
-      - name: Pin Android NDK 27.3.13750724
+      - name: Pin Android NDK 29.0.14206865
         if: startsWith(matrix.target, 'android')
         run: |
           set -euo pipefail
-          ndk_version=27.3.13750724
+          ndk_version=29.0.14206865
           sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
           if [ -z "$sdk_root" ]; then
             echo "::error::ANDROID_SDK_ROOT/ANDROID_HOME is not set; cannot locate NDK $ndk_version"
@@ -260,6 +261,34 @@ jobs:
           fi
           count="$(printf '%s\n' "$defined" | grep -Ec '^_?(wgpu|dawn)' || true)"
           echo "shared symbol check OK: $count wgpu/dawn symbols, 0 leaks"
+
+      # Google Play requires 16 KiB page size compatibility for apps targeting
+      # Android 15+ on 64-bit devices: every PT_LOAD of the shipped .so must
+      # be aligned to 16 KiB (16384) or a multiple. The link flag lives in
+      # CMakeLists.txt (see the Android 16 KiB comment there); this check
+      # proves it on the archive CI actually publishes. 64-bit ABIs only:
+      # 16 KiB devices are 64-bit only, the 32-bit .so legitimately stay
+      # 4 KiB aligned.
+      - name: 16 KiB alignment check (Android 64-bit shared)
+        if: (matrix.target == 'androidNativeArm64' || matrix.target == 'androidNativeX64') && matrix.linkage == 'shared'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          target="${{ matrix.target }}"
+          archives=(dist/$target/dawn-*-$target-shared.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one shared archive for $target, found ${#archives[@]}"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          tar xzf "${archives[0]}" -C "$work"
+          so="$(find "$work/lib" -name '*.so' -print -quit)"
+          [ -n "$so" ] || { echo "::error::shared library missing from ${archives[0]}"; exit 1; }
+          # The NDK's llvm-readelf reads any Android ELF regardless of the
+          # host binutils configuration.
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            bash scripts/check-elf-alignment.sh 16384 "$so"
 
       # The Windows equivalent of the ELF version script check, against a
       # different invariant: MSVC only exports what is explicitly marked, so the

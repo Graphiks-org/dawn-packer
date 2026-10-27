@@ -7,7 +7,7 @@
 # x86_64, x86). This file relies on CMake's built-in Android/NDK support rather
 # than re-deriving compiler paths by hand.
 #
-# Pinned and validated NDK: 27.3.13750724 (see docs/spikes/android.md).
+# Pinned and validated NDK: 29.0.14206865 (see docs/spikes/android.md).
 set(CMAKE_SYSTEM_NAME Android)
 set(CMAKE_SYSTEM_VERSION 26)
 set(CMAKE_ANDROID_API 26)
@@ -17,11 +17,11 @@ set(CMAKE_ANDROID_API 26)
 if (NOT DEFINED CMAKE_ANDROID_NDK OR CMAKE_ANDROID_NDK STREQUAL "")
   if (DEFINED ENV{ANDROID_NDK_HOME} AND NOT "$ENV{ANDROID_NDK_HOME}" STREQUAL "")
     set(CMAKE_ANDROID_NDK "$ENV{ANDROID_NDK_HOME}")
-  elseif (DEFINED ENV{ANDROID_HOME} AND EXISTS "$ENV{ANDROID_HOME}/ndk/27.3.13750724")
-    set(CMAKE_ANDROID_NDK "$ENV{ANDROID_HOME}/ndk/27.3.13750724")
+  elseif (DEFINED ENV{ANDROID_HOME} AND EXISTS "$ENV{ANDROID_HOME}/ndk/29.0.14206865")
+    set(CMAKE_ANDROID_NDK "$ENV{ANDROID_HOME}/ndk/29.0.14206865")
   else()
     message(FATAL_ERROR
-      "Android NDK not found. Set ANDROID_NDK_HOME to the pinned NDK 27.3.13750724.")
+      "Android NDK not found. Set ANDROID_NDK_HOME to the pinned NDK 29.0.14206865.")
   endif()
 endif()
 
